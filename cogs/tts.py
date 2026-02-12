@@ -189,7 +189,7 @@ async def logintts(self, ctx: commands.Context, name: str):
         await self.process_queue(vc)
 
     # ----------------------------
-    # COOLDOWN ERROR HANDLER
+    # COOLDOWN ERROR HANDLERS
     # ----------------------------
 
     @tts.error
