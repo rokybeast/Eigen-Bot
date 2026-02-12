@@ -5,7 +5,7 @@ from discord.ext import commands
 from queue import Queue
 from io import BytesIO
 import edge_tts
-
+import sqlite3
 
 class Say(commands.Cog):
     """Edge TTS with queue, cooldown, custom login name and auto leave."""
@@ -15,7 +15,18 @@ class Say(commands.Cog):
         self.queue: Queue[str] = Queue()
         self.playing: bool = False
         self.leave_task: asyncio.Task | None = None
-        self.tts_names: dict[int, str] = {}
+        # self.tts_names: dict[int, str] = {}
+
+
+        self.db = sqlite3.connect("botdata.db")
+        self.db.execute("""
+CREATE TABLE IF NOT EXISTS tts_logins (
+    user_id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL
+)
+""")
+        self.db.commit()
+
 
     # ----------------------------
     # AUTO LEAVE
@@ -85,14 +96,21 @@ class Say(commands.Cog):
     # ----------------------------
     # LOGIN TTS NAME
     # ----------------------------
+@commands.hybrid_command(name="logintts")
+async def logintts(self, ctx: commands.Context, name: str):
+    if len(name) > 32:
+        return await ctx.send("Name too long. Max 32 characters.")
 
-    @commands.hybrid_command(name="logintts")
-    async def logintts(self, ctx: commands.Context, name: str):
-        if len(name) > 32:
-            return await ctx.send("Name too long. Max 32 characters.")
+    self.db.execute(
+        "INSERT OR REPLACE INTO tts_logins (user_id, name) VALUES (?, ?)",
+        (ctx.author.id, name.strip())
+    )
+    self.db.commit()
 
-        self.tts_names[ctx.author.id] = name.strip()
-        await ctx.send(f"TTS name set to: {name}")
+    await ctx.send(
+        f"TTS name set to: {name}\n"
+        "You can now use ?tts <message>"
+    )
 
     # ----------------------------
     # FORCE LEAVE VC
@@ -125,11 +143,14 @@ class Say(commands.Cog):
             return await ctx.send("Server member only.")
 
         # Require login
-        if ctx.author.id not in self.tts_names:
-            return await ctx.send(
-                "You must set your TTS name first.\n"
-                "Use: ?logintts <your_name>"
-            )
+        cursor = self.db.execute("SELECT name FROM tts_logins WHERE user_id = ?",(ctx.author.id,))
+        row = cursor.fetchone()
+
+        if row is None:
+            return await ctx.send("You must set your TTS name first.\n" "Use: ?logintts <your_name> or <your_identity> u wanna use!")
+
+        tts_name = row[0]
+
 
         if not author.voice or not author.voice.channel:
             return await ctx.send("Join a voice channel first.")
