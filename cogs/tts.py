@@ -45,7 +45,7 @@ class Say(commands.Cog):
 
         async def leave_later():
             try:
-                timeout = float(os.getenv("TTS_VC_LEAVE_TIMEOUT", "30"))
+                timeout = float(os.getenv("TTS_VC_LEAVE_TIMEOUT", "240"))
                 await asyncio.sleep(timeout)
 
                 if vc.is_connected() and not vc.is_playing():
@@ -60,7 +60,7 @@ class Say(commands.Cog):
     # ----------------------------
 
     async def edge_to_bytes(self, text: str) -> BytesIO:
-        voice = os.getenv("TTS_VOICE", "en-US-AriaNeural")
+        voice = os.getenv("TTS_VOICE")
         comm = edge_tts.Communicate(text=text, voice=voice)
 
         fp = BytesIO()
