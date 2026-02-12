@@ -1,32 +1,39 @@
 import asyncio
 import os
-import discord
-from discord.ext import commands
+import sqlite3
 from queue import Queue
 from io import BytesIO
+
+import discord
+from discord.ext import commands
+from discord.ext.commands import Context
 import edge_tts
-import sqlite3
+
 
 class Say(commands.Cog):
-    """Edge TTS with queue, cooldown, custom login name and auto leave."""
+    """Edge TTS with queue, cooldown, persistent login and auto leave."""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self.queue: Queue[str] = Queue()
         self.playing: bool = False
         self.leave_task: asyncio.Task | None = None
-        # self.tts_names: dict[int, str] = {}
 
+        # Persistent SQLite storage
+        self.db: sqlite3.Connection = sqlite3.connect(
+            "botdata.db",
+            check_same_thread=False
+        )
 
-        self.db = sqlite3.connect("botdata.db")
-        self.db.execute("""
-CREATE TABLE IF NOT EXISTS tts_logins (
-    user_id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL
-)
-""")
+        self.db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tts_logins (
+                user_id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL
+            )
+            """
+        )
         self.db.commit()
-
 
     # ----------------------------
     # AUTO LEAVE
@@ -96,28 +103,29 @@ CREATE TABLE IF NOT EXISTS tts_logins (
     # ----------------------------
     # LOGIN TTS NAME
     # ----------------------------
-@commands.hybrid_command(name="logintts")
-async def logintts(self, ctx: commands.Context, name: str):
-    if len(name) > 32:
-        return await ctx.send("Name too long. Max 32 characters.")
 
-    self.db.execute(
-        "INSERT OR REPLACE INTO tts_logins (user_id, name) VALUES (?, ?)",
-        (ctx.author.id, name.strip())
-    )
-    self.db.commit()
+    @commands.hybrid_command(name="logintts")
+    async def logintts(self, ctx: Context, name: str):
+        if len(name) > 32:
+            return await ctx.send("Name too long. Max 32 characters.")
 
-    await ctx.send(
-        f"TTS name set to: {name}\n"
-        "You can now use ?tts <message>"
-    )
+        self.db.execute(
+            "INSERT OR REPLACE INTO tts_logins (user_id, name) VALUES (?, ?)",
+            (ctx.author.id, name.strip())
+        )
+        self.db.commit()
+
+        await ctx.send(
+            f'TTS name set to: {name}\n'
+            "You can now use ?tts <message>"
+        )
 
     # ----------------------------
     # FORCE LEAVE VC
     # ----------------------------
 
     @commands.hybrid_command(name="leavevc")
-    async def leavevc(self, ctx: commands.Context):
+    async def leavevc(self, ctx: Context):
         vc = ctx.voice_client
         if isinstance(vc, discord.VoiceClient) and vc.is_connected():
             await vc.disconnect(force=True)
@@ -128,9 +136,10 @@ async def logintts(self, ctx: commands.Context, name: str):
     # ----------------------------
     # TTS COMMAND
     # ----------------------------
+
     @commands.hybrid_command(name="tts")
     @commands.cooldown(1, 2, commands.BucketType.user)
-    async def tts(self, ctx: commands.Context, *, text: str):
+    async def tts(self, ctx: Context, *, text: str):
 
         if ctx.guild is None:
             return await ctx.send("Server only command.")
@@ -142,15 +151,20 @@ async def logintts(self, ctx: commands.Context, name: str):
         if not isinstance(author, discord.Member):
             return await ctx.send("Server member only.")
 
-        # Require login
-        cursor = self.db.execute("SELECT name FROM tts_logins WHERE user_id = ?",(ctx.author.id,))
+        # Fetch login from DB
+        cursor = self.db.execute(
+            "SELECT name FROM tts_logins WHERE user_id = ?",
+            (ctx.author.id,)
+        )
         row = cursor.fetchone()
 
         if row is None:
-            return await ctx.send("You must set your TTS name first.\n" "Use: ?logintts <your_name> or <your_identity> u wanna use!")
+            return await ctx.send(
+                "You must set your TTS name first.\n"
+                "Use: ?logintts <your_name>"
+            )
 
-        tts_name = row[0]
-
+        tts_name: str = row[0]
 
         if not author.voice or not author.voice.channel:
             return await ctx.send("Join a voice channel first.")
@@ -180,8 +194,6 @@ async def logintts(self, ctx: commands.Context, name: str):
                     f"<#{channel_.id}>", f"#{channel_.name}"
                 )
 
-        tts_name = self.tts_names[ctx.author.id]
-
         self.queue.put(f"{tts_name} said {content}")
 
         await ctx.send(f'"{tts_name}" is saying: {text}')
@@ -189,11 +201,11 @@ async def logintts(self, ctx: commands.Context, name: str):
         await self.process_queue(vc)
 
     # ----------------------------
-    # COOLDOWN ERROR HANDLERS
+    # COOLDOWN ERROR HANDLER
     # ----------------------------
 
     @tts.error
-    async def tts_error(self, ctx: commands.Context, error):
+    async def tts_error(self, ctx: Context, error):
         if isinstance(error, commands.CommandOnCooldown):
             await ctx.send("You are sending TTS too fast. Wait 2 seconds.")
         else:
