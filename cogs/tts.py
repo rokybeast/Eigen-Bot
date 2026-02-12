@@ -109,7 +109,16 @@ class Say(commands.Cog):
                 await vc.disconnect(force=True)
                 vc = await channel.connect()
 
-        self.queue.put(f"{ctx.author.display_name} said: " + text)
+        content = text
+        for member in ctx.message.mentions:
+            content = content.replace(f"<@{member.id}>", f"@{member.display_name}")
+            content = content.replace(f"<@!{member.id}>", f"@{member.display_name}")
+        
+        for channel in ctx.message.channel_mentions:
+            content = content.replace(f"<#{channel.id}>", f"#{channel.name}")
+            content = content.replace(f"<#!{channel.id}>", f"#{channel.name}")
+
+        self.queue.put(f"{ctx.author.display_name} said: " + content)
         embed = discord.Embed(
             title="Yapping 🗣",
             description=f"Message: **{text}**",
