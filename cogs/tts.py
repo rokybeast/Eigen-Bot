@@ -89,7 +89,7 @@ class Say(commands.Cog):
 
                 try:
                     audio = await self.edge_to_bytes(text)
-                    source = discord.FFmpegPCMAudio(audio, pipe=True, options='-f mp3') # Tell ffmpeg it's MP3
+                    source = discord.FFmpegPCMAudio(audio, pipe=True)
 
                     def after_playing(error):
                         if error:
