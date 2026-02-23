@@ -58,8 +58,9 @@ class UtilityExtra(commands.Cog):
         display = " ".join(str(e) for e in emojis[:100])  # limit to avoid overflow
         await ctx.reply(f"Emojis ({len(emojis)}):\n{display}")
 
-    @commands.command(name="membercount", help="Get the member count of the current server.")
+    @commands.hybrid_command(name="membercount", help="Get the member count of the current server.")
     @commands.guild_only()
+    @app_commands.guild_only()
     async def membercount(self, ctx: commands.Context):
         if ctx.guild is None:
             return await ctx.reply("This command can only be used in a server.")

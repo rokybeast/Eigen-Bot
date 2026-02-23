@@ -56,11 +56,11 @@ class Say(commands.Cog):
         self.leave_task = asyncio.create_task(leave_later())
 
     # ----------------------------
-    # GENERATE AUDIO
+    # QUEUE PROCESSOR
     # ----------------------------
 
     async def edge_to_bytes(self, text: str) -> BytesIO:
-        voice = os.getenv("TTS_VOICE")
+        voice = os.getenv("TTS_VOICE", "en-US-AriaNeural") # Default voice if env missing
         comm = edge_tts.Communicate(text=text, voice=voice)
 
         fp = BytesIO()
@@ -71,33 +71,47 @@ class Say(commands.Cog):
         fp.seek(0)
         return fp
 
-    # ----------------------------
-    # QUEUE PROCESSOR
-    # ----------------------------
-
     async def process_queue(self, vc: discord.VoiceClient) -> None:
         if self.playing:
             return
 
         self.playing = True
 
-        while not self.queue.empty():
-            text = self.queue.get()
+        try:
+            while not self.queue.empty():
+                if not vc.is_connected():
+                    break
 
-            if self.leave_task:
-                self.leave_task.cancel()
+                text = self.queue.get()
 
-            audio = await self.edge_to_bytes(text)
-            source = discord.FFmpegPCMAudio(audio, pipe=True)
+                if self.leave_task:
+                    self.leave_task.cancel()
 
-            vc.play(source)
+                try:
+                    audio = await self.edge_to_bytes(text)
+                    source = discord.FFmpegPCMAudio(audio, pipe=True, options='-f mp3') # Tell ffmpeg it's MP3
 
-            while vc.is_playing():
-                await asyncio.sleep(0.5)
+                    def after_playing(error):
+                        if error:
+                            print(f"TTS Error: {error}")
+                        # Signal completion here if needed, but simple sleep loop works too for now
 
-            self.queue.task_done()
+                    vc.play(source, after=after_playing)
 
-        self.playing = False
+                    while vc.is_playing():
+                        await asyncio.sleep(0.5)
+                        if not vc.is_connected():
+                            break
+
+                except Exception as e:
+                    print(f"Error processing TTS: {e}")
+                finally:
+                    self.queue.task_done()
+        finally:
+            self.playing = False
+            await self.schedule_leave(vc)
+
+    # ----------------------------
         await self.schedule_leave(vc)
 
     # ----------------------------
@@ -198,7 +212,9 @@ class Say(commands.Cog):
 
         await ctx.send(f'"{tts_name}" is saying: {text}')
 
-        await self.process_queue(vc)
+        # Do not block the command, process in background
+        if not self.playing:
+            self.bot.loop.create_task(self.process_queue(vc))
 
     # ----------------------------
     # COOLDOWN ERROR HANDLER
