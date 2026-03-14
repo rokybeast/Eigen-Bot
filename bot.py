@@ -37,6 +37,7 @@ class Fun2OoshBot(commands.Bot):
         intents.members = True  # For member-related commands
         intents.message_content = True  # For message commands
         intents.presences = True  # For seeing user activities (Spotify, games, etc.)
+        intents.voice_states = True  # For join/leave voice channel features
 
         # Disable the built-in help_command so a custom help cog can register `?helpmenu` and `/help`
         super().__init__(

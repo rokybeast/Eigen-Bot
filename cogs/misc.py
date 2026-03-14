@@ -19,6 +19,76 @@ class Misc(commands.Cog):
         self.bot = bot
         self.config = config
 
+    @commands.hybrid_command(name='join-vc', description='Join your voice channel for fun')
+    async def join_vc(self, ctx: commands.Context):
+        """Join the invoker's voice channel (only if it is not empty)."""
+        if ctx.guild is None:
+            return await ctx.send("Server only command.")
+
+        if not isinstance(ctx.author, discord.Member):
+            return await ctx.send("Server member only.")
+
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            return await ctx.send("Join a voice channel first.")
+
+        channel = ctx.author.voice.channel
+        non_bot_members = [m for m in channel.members if not m.bot]
+        if len(non_bot_members) == 0:
+            return await ctx.send("I will not join an empty voice channel.")
+
+        vc = ctx.voice_client
+
+        try:
+            if isinstance(vc, discord.VoiceClient) and vc.is_connected():
+                if vc.is_playing() or vc.is_paused():
+                    return await ctx.send("I am currently playing audio in a voice channel.")
+
+                if vc.channel == channel:
+                    return await ctx.send("I am already in your voice channel.")
+
+                await vc.move_to(channel)
+            else:
+                await channel.connect()
+
+        except discord.Forbidden:
+            return await ctx.send("I do not have permission to join that voice channel.")
+        except discord.ClientException:
+            return await ctx.send("I could not connect to that voice channel.")
+
+        await ctx.send(f"Joined {channel.mention}.")
+
+    @commands.Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ):
+        """Auto-leave when the last non-bot member leaves the bot's channel."""
+        if member.bot:
+            return
+
+        vc = getattr(member.guild, 'voice_client', None)
+        if not isinstance(vc, discord.VoiceClient) or not vc.is_connected() or not vc.channel:
+            return
+
+        # Only react to events involving the channel we're currently in.
+        if before.channel != vc.channel and after.channel != vc.channel:
+            return
+
+        # If nobody (except bots) is left in the channel, disconnect.
+        remaining_humans = [m for m in vc.channel.members if not m.bot]
+        if len(remaining_humans) != 0:
+            return
+
+        if vc.is_playing() or vc.is_paused():
+            return
+
+        try:
+            await vc.disconnect()
+        except Exception:
+            return
+
     @commands.hybrid_command(name='about', description='Learn about Eigen Bot')
     async def about(self, ctx: commands.Context):
         """Show information about the bot."""
