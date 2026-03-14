@@ -13,9 +13,50 @@ logger = logging.getLogger(__name__)
 
 # Constants
 STAFF_ROLE_ID = 1403059755001577543
-REVIEW_CHANNEL_ID = 1396353386429026304
+DEFAULT_REVIEW_CHANNEL_ID = 1396353386429026304
 DB_PATH = Path("data/staff_applications.db")
 MAX_APPLICATIONS_PER_MONTH = 2
+
+
+async def _ensure_settings_table() -> None:
+    if not DB_PATH.parent.exists():
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+            """
+        )
+        await db.commit()
+
+
+async def get_review_channel_id() -> int:
+    await _ensure_settings_table()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT value FROM settings WHERE key = ?",
+            ("review_channel_id",),
+        ) as cursor:
+            row = await cursor.fetchone()
+    if not row:
+        return DEFAULT_REVIEW_CHANNEL_ID
+    try:
+        return int(row[0])
+    except (TypeError, ValueError):
+        return DEFAULT_REVIEW_CHANNEL_ID
+
+
+async def set_review_channel_id(channel_id: int) -> None:
+    await _ensure_settings_table()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("review_channel_id", str(channel_id)),
+        )
+        await db.commit()
 
 QUESTIONS = [
     {
@@ -290,7 +331,12 @@ class PanelView(discord.ui.View):
                 await db.commit()
             
             # Post to Review Channel
-            review_channel = self.bot.get_channel(REVIEW_CHANNEL_ID)
+            review_channel_id = await get_review_channel_id()
+            review_channel = self.bot.get_channel(review_channel_id)
+
+            if review_channel is None and interaction.guild:
+                review_channel = interaction.guild.get_channel(review_channel_id)
+
             if review_channel and isinstance(review_channel, discord.abc.Messageable):
                 review_embed = discord.Embed(title=f"New Staff Application: {user.name}", color=0x000000)
                 review_embed.set_thumbnail(url=user.display_avatar.url)
@@ -338,7 +384,9 @@ class PanelView(discord.ui.View):
                 view = ReviewView(user.id, self.bot)
                 await review_channel.send(content="@here", embed=review_embed, view=view)
             elif review_channel:
-                logger.error(f"Review channel {REVIEW_CHANNEL_ID} is not messageable: {type(review_channel)}")
+                logger.error(f"Review channel {review_channel_id} is not messageable: {type(review_channel)}")
+            else:
+                logger.error(f"Review channel not found: {review_channel_id}")
 
         except asyncio.TimeoutError:
             await dm_channel.send("Application timed out. Please try again.")
@@ -365,6 +413,8 @@ class StaffApplications(commands.Cog):
                 )
             """)
             await db.commit()
+
+        await _ensure_settings_table()
             
         # Add persistent views
         self.bot.add_view(PanelView(self.bot))
@@ -394,6 +444,37 @@ class StaffApplications(commands.Cog):
         # OR: Just accept current limitation.
         # BUT, let's try to do it right. I will add a listener for interactions.
         pass
+
+    @app_commands.command(name="setapps", description="Set the channel where staff applications are sent")
+    @app_commands.describe(channel="Channel to send staff applications to")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def setapps(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+        if not interaction.guild:
+            return await interaction.response.send_message(
+                "This command can only be used in a server.",
+                ephemeral=True,
+            )
+
+        target_channel: Optional[discord.TextChannel]
+        if channel is not None:
+            target_channel = channel
+        else:
+            if isinstance(interaction.channel, discord.TextChannel):
+                target_channel = interaction.channel
+            else:
+                target_channel = None
+
+        if target_channel is None:
+            return await interaction.response.send_message(
+                "Please select a text channel.",
+                ephemeral=True,
+            )
+
+        await set_review_channel_id(target_channel.id)
+        await interaction.response.send_message(
+            f"Staff applications will now be sent to {target_channel.mention}.",
+            ephemeral=True,
+        )
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
