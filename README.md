@@ -159,6 +159,25 @@ Celebrate community birthdays:
 - **Announcements**: Automatic birthday wishes on your special day
 - **Privacy**: Only stores day and month, not year
 
+### ** Counting Game**
+Run a server counting game with anti-grief protections and highscores:
+- **Set Channel**: `/setcountingchannel <channel>` - Admin-only, choose the counting channel
+- **Double-count Warnings**: Counting twice in a row gives `⚠️` warnings (3 warnings triggers a fail)
+- **Deleted Number Logging**: If a valid counting number is deleted, the bot announces who deleted it
+- **Highscore Marker**: When the server reaches/ties the highscore, the message is marked with ✅ + 🏆 until the count is ruined
+- **Highscore Table**: `?highscoretable` / `/highscoretable` (and `?highscores`) - View recent highscore history
+
+### ** Staff Applications**
+Collect staff applications via DMs and review them in a configurable channel:
+- **Post Panel**: `?panel` / `/panel` - Admin-only, posts the staff application panel
+- **Set Review Channel**: `/setapps [channel]` - Admin-only, change where applications are sent (can be changed anytime)
+- **View User Applications**: `/applications <user>` - View a user’s application history
+
+### ** Voice (Just For Fun)**
+Simple voice utilities:
+- **Join Voice**: `?join-vc` / `/join-vc` - Bot joins your current voice channel (won’t join empty channels)
+- **Auto Leave**: Bot disconnects when the last non-bot user leaves
+
 ### ** Admin & Moderation**
 Powerful tools for server administrators:
 - **Bot Management**: `?reload <cog>` - Reload cogs on the fly

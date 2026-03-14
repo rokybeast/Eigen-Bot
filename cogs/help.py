@@ -40,7 +40,26 @@ COG_DESCRIPTIONS = {
     "codebuddyquizcog": "Test your coding knowledge with quizzes",
     "codebuddyhelpcog": "Help and information for CodeBuddy features",
     "dailyquestscog": "Complete daily challenges to earn rewards! Solve quizzes, vote, and earn streak freezes & bonus hints",
+    "counting": "Counting game with highscores, warnings, and leaderboards",
+    "staffapplications": "Staff application panel, review buttons, and admin config",
 }
+
+
+def _flatten_app_commands(cmds: list[app_commands.Command | app_commands.Group]):
+    """Yield app commands recursively (includes group subcommands)."""
+    for cmd in cmds:
+        yield cmd
+        if isinstance(cmd, app_commands.Group):
+            yield from _flatten_app_commands(list(cmd.commands))
+
+
+def _slash_commands_for_cog(bot: commands.Bot, cog: commands.Cog) -> list[app_commands.Command | app_commands.Group]:
+    """Return slash commands bound to the given cog (includes group subcommands)."""
+    bound: list[app_commands.Command | app_commands.Group] = []
+    for cmd in _flatten_app_commands(list(bot.tree.get_commands())):
+        if getattr(cmd, "binding", None) is cog:
+            bound.append(cmd)
+    return bound
 
 
 class HelpSelect(discord.ui.Select):
@@ -84,8 +103,14 @@ class HelpSelect(discord.ui.Select):
                 continue
             
             # Get visible commands count
-            visible_count = sum(1 for cmd in cog.get_commands() 
-                              if not getattr(cmd, 'hidden', False) and cmd.enabled)
+            visible_prefix = [
+                cmd for cmd in cog.get_commands()
+                if not getattr(cmd, 'hidden', False) and cmd.enabled
+            ]
+            prefix_names = {cmd.name for cmd in visible_prefix}
+            slash_cmds = _slash_commands_for_cog(bot, cog)
+            visible_slash_only = [c for c in slash_cmds if c.name not in prefix_names]
+            visible_count = len(visible_prefix) + len(visible_slash_only)
             
             if visible_count == 0:
                 continue
@@ -161,13 +186,24 @@ class HelpSelect(discord.ui.Select):
             
             # Count commands from cogs merged into Misc
             if cog_name.lower() in merged_into_misc or cog_name.lower() == 'misc':
-                visible_count = sum(1 for cmd in cog.get_commands() 
-                                  if not getattr(cmd, 'hidden', False) and cmd.enabled)
-                misc_count += visible_count
+                visible_prefix = [
+                    cmd for cmd in cog.get_commands()
+                    if not getattr(cmd, 'hidden', False) and cmd.enabled
+                ]
+                prefix_names = {cmd.name for cmd in visible_prefix}
+                slash_cmds = _slash_commands_for_cog(self.bot, cog)
+                visible_slash_only = [c for c in slash_cmds if c.name not in prefix_names]
+                misc_count += (len(visible_prefix) + len(visible_slash_only))
                 continue
             
-            visible_count = sum(1 for cmd in cog.get_commands() 
-                              if not getattr(cmd, 'hidden', False) and cmd.enabled)
+            visible_prefix = [
+                cmd for cmd in cog.get_commands()
+                if not getattr(cmd, 'hidden', False) and cmd.enabled
+            ]
+            prefix_names = {cmd.name for cmd in visible_prefix}
+            slash_cmds = _slash_commands_for_cog(self.bot, cog)
+            visible_slash_only = [c for c in slash_cmds if c.name not in prefix_names]
+            visible_count = len(visible_prefix) + len(visible_slash_only)
             
             if visible_count > 0:
                 categories.append(f"**{cog_name}** · {visible_count} commands")
@@ -265,13 +301,26 @@ class HelpSelect(discord.ui.Select):
             commands_list = []
             for name, cog in self.bot.cogs.items():
                 if name.lower() in merged_cogs:
-                    for cmd in cog.get_commands():
-                        if not getattr(cmd, 'hidden', False) and cmd.enabled:
-                            signature = f"{cmd.name} {cmd.signature}".strip()
-                            desc = cmd.short_doc or "No description"
-                            if len(desc) > 80:
-                                desc = desc[:77] + "..."
-                            commands_list.append(f"`{signature}`\n*{desc}*")
+                    visible_prefix = [
+                        cmd for cmd in cog.get_commands()
+                        if not getattr(cmd, 'hidden', False) and cmd.enabled
+                    ]
+                    prefix_names = {cmd.name for cmd in visible_prefix}
+
+                    for cmd in visible_prefix:
+                        signature = f"{cmd.name} {cmd.signature}".strip()
+                        desc = cmd.short_doc or "No description"
+                        if len(desc) > 80:
+                            desc = desc[:77] + "..."
+                        commands_list.append(f"`{signature}`\n*{desc}*")
+
+                    for sc in _slash_commands_for_cog(self.bot, cog):
+                        if sc.name in prefix_names:
+                            continue
+                        desc = getattr(sc, "description", None) or "No description"
+                        if len(desc) > 80:
+                            desc = desc[:77] + "..."
+                        commands_list.append(f"`/{sc.name}`\n*{desc}*")
             
             if commands_list:
                 # Split into chunks by character count (max 1000 to be safe)
@@ -337,15 +386,28 @@ class HelpSelect(discord.ui.Select):
         
         # Group commands by type or just list them
         commands_list = []
-        for cmd in cog.get_commands():
-            if not getattr(cmd, 'hidden', False) and cmd.enabled:
-                # Format: command name + signature + description
-                signature = f"{cmd.name} {cmd.signature}".strip()
-                desc = cmd.short_doc or "No description"
-                # Limit description length to prevent overflow
-                if len(desc) > 80:
-                    desc = desc[:77] + "..."
-                commands_list.append(f"`{signature}`\n*{desc}*")
+        visible_prefix = [
+            cmd for cmd in cog.get_commands()
+            if not getattr(cmd, 'hidden', False) and cmd.enabled
+        ]
+        prefix_names = {cmd.name for cmd in visible_prefix}
+
+        for cmd in visible_prefix:
+            # Format: command name + signature + description
+            signature = f"{cmd.name} {cmd.signature}".strip()
+            desc = cmd.short_doc or "No description"
+            # Limit description length to prevent overflow
+            if len(desc) > 80:
+                desc = desc[:77] + "..."
+            commands_list.append(f"`{signature}`\n*{desc}*")
+
+        for sc in _slash_commands_for_cog(self.bot, cog):
+            if sc.name in prefix_names:
+                continue
+            desc = getattr(sc, "description", None) or "No description"
+            if len(desc) > 80:
+                desc = desc[:77] + "..."
+            commands_list.append(f"`/{sc.name}`\n*{desc}*")
         
         if commands_list:
             # Split into chunks by character count (max 1000 to be safe)
@@ -509,6 +571,48 @@ class HelpCog(commands.Cog):
             await ctx.send(embed=embed)
             return
 
+        # Try to find a slash command by name
+        slash_cmd = None
+        for sc in _flatten_app_commands(list(self.bot.tree.get_commands())):
+            if sc.name.lower() == query.lower():
+                slash_cmd = sc
+                break
+
+        if slash_cmd:
+            embed = discord.Embed(
+                title=f" Slash Command: /{slash_cmd.name}",
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(
+                name="Usage",
+                value=f"`/{slash_cmd.name}`",
+                inline=False
+            )
+
+            description = getattr(slash_cmd, "description", None) or "No description available."
+            embed.add_field(name="Description", value=description, inline=False)
+
+            params = getattr(slash_cmd, "parameters", None)
+            if params:
+                param_lines = []
+                for p in params:
+                    pname = getattr(p, "name", "")
+                    pdesc = getattr(p, "description", "") or ""
+                    required = getattr(p, "required", False)
+                    req = "required" if required else "optional"
+                    line = f"{pname} ({req})"
+                    if pdesc:
+                        line += f" - {pdesc}"
+                    param_lines.append(line)
+
+                if param_lines:
+                    embed.add_field(name="Parameters", value="\n".join(param_lines), inline=False)
+
+            embed.set_footer(text="Tip: Most commands work with both ? prefix and / slash commands!")
+            await ctx.send(embed=embed)
+            return
+
         # Try to find a cog (case-insensitive)
         cog = None
         actual_cog_name = None
@@ -529,11 +633,22 @@ class HelpCog(commands.Cog):
             )
             
             commands_list = []
-            for c in cog.get_commands():
-                if not getattr(c, 'hidden', False) and c.enabled:
-                    signature = f"{c.name} {c.signature}".strip()
-                    desc = c.short_doc or "No description"
-                    commands_list.append(f"`{signature}`\n└─ {desc}")
+            visible_prefix = [
+                c for c in cog.get_commands()
+                if not getattr(c, 'hidden', False) and c.enabled
+            ]
+            prefix_names = {c.name for c in visible_prefix}
+
+            for c in visible_prefix:
+                signature = f"{c.name} {c.signature}".strip()
+                desc = c.short_doc or "No description"
+                commands_list.append(f"`{signature}`\n└─ {desc}")
+
+            for sc in _slash_commands_for_cog(self.bot, cog):
+                if sc.name in prefix_names:
+                    continue
+                desc = getattr(sc, "description", None) or "No description"
+                commands_list.append(f"`/{sc.name}`\n└─ {desc}")
 
             if commands_list:
                 # Split into chunks if too long
@@ -591,6 +706,40 @@ class HelpCog(commands.Cog):
             await interaction.response.send_message(embed=embed)
             return
 
+        # Try to find a slash command by name
+        slash_cmd = None
+        for sc in _flatten_app_commands(list(self.bot.tree.get_commands())):
+            if sc.name.lower() == query.lower():
+                slash_cmd = sc
+                break
+
+        if slash_cmd:
+            embed = discord.Embed(
+                title=f"Slash Command: /{slash_cmd.name}",
+                color=0x000000
+            )
+            embed.add_field(name="Usage", value=f"`/{slash_cmd.name}`", inline=False)
+            description = getattr(slash_cmd, "description", None) or "No description available."
+            embed.add_field(name="Description", value=description, inline=False)
+
+            params = getattr(slash_cmd, "parameters", None)
+            if params:
+                param_lines = []
+                for p in params:
+                    pname = getattr(p, "name", "")
+                    pdesc = getattr(p, "description", "") or ""
+                    required = getattr(p, "required", False)
+                    req = "required" if required else "optional"
+                    line = f"{pname} ({req})"
+                    if pdesc:
+                        line += f" - {pdesc}"
+                    param_lines.append(line)
+                if param_lines:
+                    embed.add_field(name="Parameters", value="\n".join(param_lines), inline=False)
+
+            await interaction.response.send_message(embed=embed)
+            return
+
         # Try to find a cog (case-insensitive)
         cog = None
         actual_cog_name = None
@@ -610,11 +759,22 @@ class HelpCog(commands.Cog):
             )
             
             commands_list = []
-            for c in cog.get_commands():
-                if not getattr(c, 'hidden', False) and c.enabled:
-                    signature = f"{c.name} {c.signature}".strip()
-                    desc = c.short_doc or "No description"
-                    commands_list.append(f"`{signature}`\n*{desc}*")
+            visible_prefix = [
+                c for c in cog.get_commands()
+                if not getattr(c, 'hidden', False) and c.enabled
+            ]
+            prefix_names = {c.name for c in visible_prefix}
+
+            for c in visible_prefix:
+                signature = f"{c.name} {c.signature}".strip()
+                desc = c.short_doc or "No description"
+                commands_list.append(f"`{signature}`\n*{desc}*")
+
+            for sc in _slash_commands_for_cog(self.bot, cog):
+                if sc.name in prefix_names:
+                    continue
+                desc = getattr(sc, "description", None) or "No description"
+                commands_list.append(f"`/{sc.name}`\n*{desc}*")
 
             if commands_list:
                 # Split into chunks if too long

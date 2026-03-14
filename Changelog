@@ -1,3 +1,23 @@
+## [2.2.0] - 2026-03-14
+
+### ✨ Added
+- **Voice Fun Command**
+  - `/join-vc` or `?join-vc` - Bot joins your current voice channel (won’t join an empty channel)
+  - Auto-leaves the voice channel when the last non-bot user leaves
+- **Staff Applications Review Channel Setting**
+  - `/setapps [channel]` - Admin-only command to change where staff applications are sent
+  - Stored in SQLite so it persists across restarts and can be changed anytime
+- **Counting Game Improvements**
+  - Deleted-number detection: announces when someone deletes a valid counting number
+  - Double-count protection: counting twice in a row gives warnings (3 warnings = fail)
+  - Highscore marker reactions: ✅ + 🏆 on the active highscore message until the count is ruined
+  - Highscore history table + `highscoretable` command
+
+### 🔄 Changed
+- Help menu now includes slash-only commands in category listings
+
+---
+
 ## [2.1.0] - 2024-12-24
 
 ### ✨ Added
