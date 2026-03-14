@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 import logging
 from datetime import datetime
+from typing import Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +65,20 @@ QUESTIONS = [
 ]
 
 class ApplicationReasonModal(discord.ui.Modal):
-    def __init__(self, action: str, user_id: int, bot: commands.Bot, view: discord.ui.View):
+    def __init__(
+        self,
+        action: str,
+        user_id: int,
+        bot: commands.Bot,
+        view: discord.ui.View,
+        review_message: Optional[discord.Message] = None,
+    ):
         super().__init__(title=f"{action.capitalize()} Application")
         self.action = action
         self.user_id = user_id
         self.bot = bot
         self.original_view = view
+        self.review_message = review_message
         
         self.reason = discord.ui.TextInput(
             label="Reason",
@@ -85,7 +94,7 @@ class ApplicationReasonModal(discord.ui.Modal):
         
         reason_text = self.reason.value
         guild = interaction.guild
-        member = guild.get_member(self.user_id)
+        member = guild.get_member(self.user_id) if guild else None
         
         # Determine status
         status = "accepted" if self.action == "accept" else "denied"
@@ -111,25 +120,43 @@ class ApplicationReasonModal(discord.ui.Modal):
                 await member.send(embed=embed)
                 
                 if status == "accepted":
-                    role = guild.get_role(STAFF_ROLE_ID)
-                    if role:
-                        await member.add_roles(role)
-                    else:
-                        logger.error(f"Role with ID {STAFF_ROLE_ID} not found.")
+                    if guild:
+                        role = guild.get_role(STAFF_ROLE_ID)
+                        if role:
+                            await member.add_roles(role)
+                        else:
+                            logger.error(f"Role with ID {STAFF_ROLE_ID} not found.")
             except discord.Forbidden:
                 logger.warning(f"Could not DM user {self.user_id}")
         
         # Update Review Message
         try:
+            review_message = self.review_message
+            if review_message is None:
+                await interaction.followup.send(
+                    f"Application {status} saved, but I couldn't update the review message.",
+                    ephemeral=True
+                )
+                return
+
             # Disable buttons on the review message
             for child in self.original_view.children:
-                child.disabled = True
-            
-            embed = interaction.message.embeds[0]
+                if isinstance(child, discord.ui.Button):
+                    child.disabled = True
+
+            if review_message.embeds:
+                embed = discord.Embed.from_dict(review_message.embeds[0].to_dict())
+            else:
+                embed = discord.Embed(title="Staff Application", color=color)
+
             embed.color = color
-            embed.add_field(name=f"Result: {status.capitalize()}", value=f"By: {interaction.user.mention}\nReason: {reason_text}", inline=False)
-            
-            await interaction.message.edit(embed=embed, view=self.original_view)
+            embed.add_field(
+                name=f"Result: {status.capitalize()}",
+                value=f"By: {interaction.user.mention}\nReason: {reason_text}",
+                inline=False,
+            )
+
+            await review_message.edit(embed=embed, view=self.original_view)
             await interaction.followup.send(f"Application {status} successfully.", ephemeral=True)
             
         except Exception as e:
@@ -144,18 +171,23 @@ class ReviewView(discord.ui.View):
         
         # Update custom IDs for the buttons to include the user_id
         for item in self.children:
-            if item.custom_id and item.custom_id.startswith("staff_app:accept"):
-                item.custom_id = f"staff_app:accept:{user_id}"
-            elif item.custom_id and item.custom_id.startswith("staff_app:deny"):
-                item.custom_id = f"staff_app:deny:{user_id}"
+            if isinstance(item, discord.ui.Button) and item.custom_id:
+                if item.custom_id.startswith("staff_app:accept"):
+                    item.custom_id = f"staff_app:accept:{user_id}"
+                elif item.custom_id.startswith("staff_app:deny"):
+                    item.custom_id = f"staff_app:deny:{user_id}"
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.green, custom_id="staff_app:accept_template")
     async def accept_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ApplicationReasonModal("accept", self.user_id, self.bot, self))
+        await interaction.response.send_modal(
+            ApplicationReasonModal("accept", self.user_id, self.bot, self, review_message=interaction.message)
+        )
 
     @discord.ui.button(label="Deny", style=discord.ButtonStyle.red, custom_id="staff_app:deny_template")
     async def deny_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(ApplicationReasonModal("deny", self.user_id, self.bot, self))
+        await interaction.response.send_modal(
+            ApplicationReasonModal("deny", self.user_id, self.bot, self, review_message=interaction.message)
+        )
 
 class PanelView(discord.ui.View):
     def __init__(self, bot: commands.Bot):
@@ -259,7 +291,7 @@ class PanelView(discord.ui.View):
             
             # Post to Review Channel
             review_channel = self.bot.get_channel(REVIEW_CHANNEL_ID)
-            if review_channel:
+            if review_channel and isinstance(review_channel, discord.abc.Messageable):
                 review_embed = discord.Embed(title=f"New Staff Application: {user.name}", color=0x000000)
                 review_embed.set_thumbnail(url=user.display_avatar.url)
                 
@@ -305,6 +337,8 @@ class PanelView(discord.ui.View):
 
                 view = ReviewView(user.id, self.bot)
                 await review_channel.send(content="@here", embed=review_embed, view=view)
+            elif review_channel:
+                logger.error(f"Review channel {REVIEW_CHANNEL_ID} is not messageable: {type(review_channel)}")
 
         except asyncio.TimeoutError:
             await dm_channel.send("Application timed out. Please try again.")
@@ -364,7 +398,9 @@ class StaffApplications(commands.Cog):
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
         if interaction.type == discord.InteractionType.component:
-            custom_id = interaction.data.get('custom_id', '')
+            if not interaction.data or not isinstance(interaction.data, dict):
+                return
+            custom_id = cast(dict, interaction.data).get('custom_id', '')
             if custom_id.startswith('staff_app:accept:') or custom_id.startswith('staff_app:deny:'):
                 # This handles buttons from previous sessions if view is not found in memory (persistence)
                 # But to make it work, I need to respond.
