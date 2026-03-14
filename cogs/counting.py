@@ -7,6 +7,8 @@ import ast
 import operator
 import random
 import asyncio
+import time
+from typing import Optional
 
 class Counting(commands.Cog):
     def __init__(self, bot):
@@ -18,6 +20,36 @@ class Counting(commands.Cog):
         """Load counting channels into memory on startup"""
         try:
             async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+                # Ensure auxiliary tables exist
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS counting_warnings (
+                        guild_id INTEGER,
+                        user_id INTEGER,
+                        warnings INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (guild_id, user_id)
+                    )
+                """)
+
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS counting_active_highscore (
+                        guild_id INTEGER PRIMARY KEY,
+                        message_id INTEGER
+                    )
+                """)
+
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS counting_highscore_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        guild_id INTEGER,
+                        score INTEGER NOT NULL,
+                        user_id INTEGER,
+                        message_id INTEGER,
+                        timestamp INTEGER
+                    )
+                """)
+
+                await db.commit()
+
                 try:
                     async with db.execute("SELECT guild_id, channel_id FROM counting_config") as cursor:
                         rows = await cursor.fetchall()
@@ -28,6 +60,126 @@ class Counting(commands.Cog):
                     print("counting_config table not found during cog load (likely first run)")
         except Exception as e:
             print(f"Error loading counting channels: {e}")
+
+    async def _get_warning_count(self, guild_id: int, user_id: int) -> int:
+        async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+            async with db.execute(
+                "SELECT warnings FROM counting_warnings WHERE guild_id = ? AND user_id = ?",
+                (guild_id, user_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def _set_warning_count(self, guild_id: int, user_id: int, warnings: int) -> None:
+        async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+            if warnings <= 0:
+                await db.execute(
+                    "DELETE FROM counting_warnings WHERE guild_id = ? AND user_id = ?",
+                    (guild_id, user_id),
+                )
+            else:
+                await db.execute(
+                    """
+                    INSERT INTO counting_warnings (guild_id, user_id, warnings)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(guild_id, user_id) DO UPDATE SET warnings = excluded.warnings
+                    """,
+                    (guild_id, user_id, warnings),
+                )
+            await db.commit()
+
+    async def _clear_all_warnings(self, guild_id: int) -> None:
+        async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+            await db.execute("DELETE FROM counting_warnings WHERE guild_id = ?", (guild_id,))
+            await db.commit()
+
+    async def _get_active_highscore_message_id(self, guild_id: int) -> Optional[int]:
+        async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+            async with db.execute(
+                "SELECT message_id FROM counting_active_highscore WHERE guild_id = ?",
+                (guild_id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+        return int(row[0]) if row and row[0] is not None else None
+
+    async def _set_active_highscore_message_id(self, guild_id: int, message_id: Optional[int]) -> None:
+        async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+            if message_id is None:
+                await db.execute("DELETE FROM counting_active_highscore WHERE guild_id = ?", (guild_id,))
+            else:
+                await db.execute(
+                    """
+                    INSERT INTO counting_active_highscore (guild_id, message_id)
+                    VALUES (?, ?)
+                    ON CONFLICT(guild_id) DO UPDATE SET message_id = excluded.message_id
+                    """,
+                    (guild_id, message_id),
+                )
+            await db.commit()
+
+    async def _remove_bot_reactions(self, channel: discord.TextChannel, message_id: int) -> None:
+        try:
+            msg = await channel.fetch_message(message_id)
+        except Exception:
+            return
+
+        if not self.bot.user:
+            return
+        try:
+            await msg.remove_reaction("✅", self.bot.user)
+        except Exception:
+            pass
+        try:
+            await msg.remove_reaction("🏆", self.bot.user)
+        except Exception:
+            pass
+
+    async def _mark_highscore_message(
+        self,
+        message: discord.Message,
+        new_count: int,
+        previous_high_score: int,
+    ) -> None:
+        """Add ✅+🏆 to the message and keep only one active highscore marker per guild."""
+        if not message.guild or not isinstance(message.channel, discord.TextChannel):
+            return
+
+        guild_id = message.guild.id
+        channel = message.channel
+
+        previous_marker = await self._get_active_highscore_message_id(guild_id)
+        if previous_marker and previous_marker != message.id:
+            await self._remove_bot_reactions(channel, previous_marker)
+
+        # Ensure reactions exist (✅ may already be there)
+        try:
+            await message.add_reaction("✅")
+        except Exception:
+            pass
+        try:
+            await message.add_reaction("🏆")
+        except Exception:
+            pass
+
+        await self._set_active_highscore_message_id(guild_id, message.id)
+
+        # Record history only if it is a NEW record
+        if new_count > previous_high_score:
+            async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+                await db.execute(
+                    """
+                    INSERT INTO counting_highscore_history (guild_id, score, user_id, message_id, timestamp)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (guild_id, new_count, message.author.id, message.id, int(time.time())),
+                )
+                await db.commit()
+
+    async def _clear_highscore_marker_if_any(self, guild_id: int, channel: discord.TextChannel) -> None:
+        marker_id = await self._get_active_highscore_message_id(guild_id)
+        if marker_id:
+            await self._remove_bot_reactions(channel, marker_id)
+            await self._set_active_highscore_message_id(guild_id, None)
 
     @app_commands.command(name="setcountingchannel", description="Set the channel for the counting game")
     @app_commands.checks.has_permissions(administrator=True)
@@ -135,7 +287,25 @@ class Counting(commands.Cog):
                         return
 
                     if message.author.id == last_user_id:
-                        await self.fail_count(message, current_count, "You can't count twice in a row!")
+                        # Warn instead of instant ruin. 3 warnings ruins the count.
+                        warnings = await self._get_warning_count(message.guild.id, message.author.id)
+                        warnings += 1
+                        await self._set_warning_count(message.guild.id, message.author.id, warnings)
+
+                        try:
+                            await message.add_reaction("⚠️")
+                        except Exception:
+                            pass
+
+                        if warnings >= 3:
+                            await self.fail_count(message, current_count, "Too many warnings (counted twice in a row 3 times)!")
+                            return
+
+                        await message.channel.send(
+                            f"You can't count twice in a row, {message.author.mention}. "
+                            f"You have **{warnings}/3** warnings.",
+                            delete_after=12,
+                        )
                         return
 
                     # Valid count - Update DB
@@ -157,6 +327,13 @@ class Counting(commands.Cog):
                     """, (message.author.id, message.guild.id))
                     
                     await db.commit()
+
+                    # Reset warnings for this user on a valid count
+                    await self._set_warning_count(message.guild.id, message.author.id, 0)
+
+                    # Highscore marker: react ✅+🏆 when reaching/topping the record
+                    if next_count >= high_score:
+                        await self._mark_highscore_message(message, next_count, high_score)
                     return # Success
             
             except aiosqlite.OperationalError as e:
@@ -170,6 +347,37 @@ class Counting(commands.Cog):
                     await asyncio.sleep(0.1 * (4 - retries)) # backoff
                 else:
                     raise # Re-raise other operational errors
+
+    @commands.Cog.listener()
+    async def on_message_delete(self, message: discord.Message):
+        """Announce when someone deletes a counting number message."""
+        if message.author.bot or not message.guild:
+            return
+
+        if message.guild.id not in self.counting_channels:
+            return
+
+        if message.channel.id != self.counting_channels[message.guild.id]:
+            return
+
+        content = (message.content or "").strip()
+        if not content:
+            return
+
+        number = self.safe_eval(content)
+        if number is None:
+            return
+
+        if isinstance(number, float):
+            if number.is_integer():
+                number = int(number)
+            else:
+                return
+
+        await message.channel.send(
+            f"{message.author.mention} deleted a number **{number}**.",
+            allowed_mentions=discord.AllowedMentions(users=True),
+        )
 
     async def fail_count(self, message, current_count, reason):
         # 1. Send initial message
@@ -296,6 +504,54 @@ class Counting(commands.Cog):
 
         # 4. Edit message
         await status_msg.edit(content=f"{reason} {message.author.mention} messed up at {current_count}!\n{outcome_msg}\nNext number is **{new_count + 1}**.")
+
+        # If the count was actually changed (ruined/reset/penalty), clear warnings and remove highscore marker.
+        count_ruined = new_count != current_count
+        if count_ruined and message.guild and isinstance(message.channel, discord.TextChannel):
+            await self._clear_all_warnings(message.guild.id)
+            await self._clear_highscore_marker_if_any(message.guild.id, message.channel)
+
+    @commands.hybrid_command(name="highscoretable", aliases=["highscores"], help="Show recent counting highscores")
+    async def highscore_table(self, ctx: commands.Context):
+        if not ctx.guild:
+            return await ctx.send("Server only command.")
+
+        async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+            async with db.execute(
+                """
+                SELECT score, user_id, timestamp
+                FROM counting_highscore_history
+                WHERE guild_id = ?
+                ORDER BY score DESC
+                LIMIT 10
+                """,
+                (ctx.guild.id,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+
+            async with db.execute(
+                "SELECT current_count, high_score FROM counting_config WHERE guild_id = ?",
+                (ctx.guild.id,),
+            ) as cursor:
+                config = await cursor.fetchone()
+
+        current = config[0] if config else 0
+        high = config[1] if config else 0
+
+        embed = discord.Embed(title="Counting Highscores", color=discord.Color.gold())
+        embed.add_field(name="Current Count", value=str(current), inline=True)
+        embed.add_field(name="All-Time High", value=str(high), inline=True)
+
+        if not rows:
+            embed.description = "No highscore history yet."
+            return await ctx.send(embed=embed)
+
+        lines = []
+        for i, (score, user_id, ts) in enumerate(rows, 1):
+            when = f"<t:{int(ts)}:R>" if ts else ""
+            lines.append(f"{i}. **{score}** by <@{user_id}> {when}")
+        embed.description = "\n".join(lines)
+        await ctx.send(embed=embed)
 
     @commands.command(name="mcl", aliases=["tc"])
     async def most_count_leaderboard(self, ctx):
