@@ -171,15 +171,45 @@ class Fun2OoshBot(commands.Bot):
         if isinstance(error, commands.CommandNotFound):
             return
 
+        async def _safe_ctx_send(message: str) -> None:
+            """Send a message without crashing on expired slash interactions.
+
+            Hybrid commands may have `ctx.interaction` set. If the interaction has expired,
+            discord will raise `Unknown interaction (10062)` when trying to respond.
+            """
+            interaction = getattr(ctx, "interaction", None)
+            if interaction is not None:
+                try:
+                    is_expired = getattr(interaction, "is_expired", None)
+                    if callable(is_expired) and interaction.is_expired():
+                        raise RuntimeError("interaction expired")
+
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(message, ephemeral=True)
+                        return
+                    await interaction.followup.send(message, ephemeral=True)
+                    return
+                except (discord.NotFound, discord.HTTPException, discord.Forbidden, RuntimeError):
+                    # Fall back to a normal channel send.
+                    pass
+                except Exception:
+                    pass
+
+            try:
+                if ctx.channel is not None:
+                    await ctx.channel.send(message)
+            except Exception:
+                return
+
         if isinstance(error, commands.CommandOnCooldown):
-            await ctx.send(f"This command is on cooldown. Try again in {error.retry_after:.2f} seconds.")
+            await _safe_ctx_send(f"This command is on cooldown. Try again in {error.retry_after:.2f} seconds.")
         elif isinstance(error, commands.MissingPermissions):
-            await ctx.send("You don't have permission to use this command.")
+            await _safe_ctx_send("You don't have permission to use this command.")
         elif isinstance(error, commands.BadArgument):
-            await ctx.send("Invalid argument provided.")
+            await _safe_ctx_send("Invalid argument provided.")
         else:
             logger.error(f"Command error: {error}")
-            await ctx.send("An error occurred while processing your command.")
+            await _safe_ctx_send("An error occurred while processing your command.")
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Handle slash command errors."""

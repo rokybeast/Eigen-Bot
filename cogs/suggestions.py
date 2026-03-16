@@ -131,10 +131,55 @@ class Suggestions(commands.Cog):
     # Commands
     # ----------------------------
 
+    async def _safe_respond(
+        self,
+        ctx: commands.Context,
+        content: Optional[str] = None,
+        *,
+        embed: Optional[discord.Embed] = None,
+        ephemeral: bool = False,
+    ) -> None:
+        """Respond without crashing on expired slash interactions.
+
+        For hybrid commands invoked as slash commands, Discord requires a response within
+        a short window. If the interaction expires, fallback to channel send.
+        """
+        interaction = getattr(ctx, "interaction", None)
+        payload: Dict[str, Any] = {}
+        if content is not None:
+            payload["content"] = content
+        if embed is not None:
+            payload["embed"] = embed
+
+        if interaction is not None:
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(**payload, ephemeral=ephemeral)
+                    return
+                await interaction.followup.send(**payload, ephemeral=ephemeral)
+                return
+            except (discord.NotFound, discord.HTTPException, discord.Forbidden):
+                pass
+            except Exception:
+                pass
+
+        try:
+            if ctx.channel is not None:
+                await ctx.channel.send(**payload)
+        except Exception:
+            return
+
     @commands.hybrid_command(name="setsuggestchannel", description="Set the channel where suggestions are posted")
     @app_commands.describe(channel="Channel where suggestions should be posted")
     async def setsuggestchannel(self, ctx: commands.Context, channel: discord.TextChannel):
         """Admin: configure suggestions channel."""
+        # If invoked as a slash command, defer quickly to avoid interaction expiry.
+        if ctx.interaction is not None:
+            try:
+                await ctx.defer(ephemeral=True)
+            except Exception:
+                pass
+
         if not await self._ensure_manage_guild(ctx):
             return
 
@@ -145,29 +190,44 @@ class Suggestions(commands.Cog):
         await self.save_data()
 
         embed = discord.Embed(
-            title="✅ Suggestions channel set",
+            title="Suggestions channel set",
             description=f"Suggestions will now be posted in {channel.mention}.",
             color=discord.Color.green(),
         )
-        await ctx.send(embed=embed)
+        await self._safe_respond(ctx, embed=embed, ephemeral=True)
 
     @commands.hybrid_command(name="suggest", description="Submit a suggestion to the server")
     @app_commands.describe(message="Your suggestion")
     async def suggest(self, ctx: commands.Context, *, message: str):
         """Submit a suggestion and create a discussion thread."""
         if ctx.guild is None:
-            return await ctx.send("Server-only command.")
+            await self._safe_respond(ctx, "Server-only command.", ephemeral=True)
+            return
+
+        # If invoked as a slash command, defer quickly to avoid interaction expiry.
+        if ctx.interaction is not None:
+            try:
+                await ctx.defer(ephemeral=True)
+            except Exception:
+                pass
 
         # Basic validation
         content = message.strip()
         if not content:
-            return await ctx.send("Please provide a suggestion message.")
+            await self._safe_respond(ctx, "Please provide a suggestion message.", ephemeral=True)
+            return
         if len(content) > 1800:
-            return await ctx.send("Suggestion is too long. Please keep it under 1800 characters.")
+            await self._safe_respond(ctx, "Suggestion is too long. Please keep it under 1800 characters.", ephemeral=True)
+            return
 
         channel_id = await self._get_suggestions_channel_id(ctx.guild.id)
         if not channel_id:
-            return await ctx.send("Suggestions channel is not configured. An admin can set it with `/setsuggestchannel`. ")
+            await self._safe_respond(
+                ctx,
+                "Suggestions channel is not configured. An admin can set it with `/setsuggestchannel`.",
+                ephemeral=True,
+            )
+            return
 
         target_channel = ctx.guild.get_channel(channel_id)
         if target_channel is None:
@@ -177,10 +237,11 @@ class Suggestions(commands.Cog):
                 target_channel = None
 
         if not isinstance(target_channel, discord.TextChannel):
-            return await ctx.send("Configured suggestions channel is invalid or not a text channel.")
+            await self._safe_respond(ctx, "Configured suggestions channel is invalid or not a text channel.", ephemeral=True)
+            return
 
         embed = discord.Embed(
-            title="💡 New Suggestion",
+            title="New Suggestion",
             description=content,
             color=discord.Color.blurple(),
             timestamp=discord.utils.utcnow(),
@@ -191,10 +252,12 @@ class Suggestions(commands.Cog):
         try:
             suggestion_msg = await target_channel.send(embed=embed)
         except discord.Forbidden:
-            return await ctx.send("I don't have permission to post in the suggestions channel.")
+            await self._safe_respond(ctx, "I don't have permission to post in the suggestions channel.", ephemeral=True)
+            return
         except Exception:
             logger.exception("Failed to post suggestion")
-            return await ctx.send("An error occurred while posting your suggestion.")
+            await self._safe_respond(ctx, "An error occurred while posting your suggestion.", ephemeral=True)
+            return
 
         # Add voting reactions
         try:
@@ -216,26 +279,21 @@ class Suggestions(commands.Cog):
             )
         except discord.Forbidden:
             # Inform the user but don't fail the suggestion itself.
-            if ctx.interaction is not None:
-                try:
-                    await ctx.interaction.followup.send(
-                        "Suggestion posted, but I couldn't create a thread (missing permissions).",
-                        ephemeral=True,
-                    )
-                except Exception:
-                    pass
-            else:
-                await ctx.send("Suggestion posted, but I couldn't create a thread (missing permissions).")
+            await self._safe_respond(
+                ctx,
+                "Suggestion posted, but I couldn't create a thread (missing permissions).",
+                ephemeral=True,
+            )
         except Exception:
             logger.exception("Failed to create suggestion thread")
 
         # Acknowledge to the user
         ack = discord.Embed(
-            title="✅ Suggestion submitted",
+            title="Suggestion submitted",
             description=f"Posted in {target_channel.mention}.",
             color=discord.Color.green(),
         )
-        await ctx.send(embed=ack)
+        await self._safe_respond(ctx, embed=ack, ephemeral=True)
 
     # ----------------------------
     # Errors
