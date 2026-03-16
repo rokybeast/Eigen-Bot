@@ -17,7 +17,6 @@ from utils.helpers import create_success_embed, create_error_embed, create_warni
 from types import SimpleNamespace
 from typing import Any
 from collections import defaultdict
-from urllib.parse import urlparse
 
 
 class ReactionProxy:
