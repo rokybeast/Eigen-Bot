@@ -19,7 +19,7 @@ class CodeBuddyLeaderboardCog(commands.Cog):
         today = datetime.date.today()
         if today.weekday() == 0:  # Monday = 0
             await reset_weekly_leaderboard()
-            print("✅ Weekly leaderboard reset for new week")
+            print(" Weekly leaderboard reset for new week")
 
     @weekly_reset.before_loop
     async def before_weekly_reset(self):
@@ -44,7 +44,7 @@ class CodeBuddyLeaderboardCog(commands.Cog):
                 week_start, week_end = get_current_week()
                 weekly_list = list(weekly_data) if weekly_data else []
             except asyncio.TimeoutError:
-                await interaction.edit_original_response(content="❌ Database query timed out. Please try again.")
+                await interaction.edit_original_response(content=" Database query timed out. Please try again.")
                 return
             
             if not weekly_list:
@@ -70,7 +70,7 @@ class CodeBuddyLeaderboardCog(commands.Cog):
             )
 
             leaderboard_text = ""
-            medals = ["🥇", "🥈", "🥉"]
+            medals = ["1.", "2.", "3."]
             
             # Get usernames efficiently - use cached data only
             for i, (user_id, weekly_score) in enumerate(weekly_list):
@@ -97,8 +97,8 @@ class CodeBuddyLeaderboardCog(commands.Cog):
                 
                 leaderboard_text += f"{medal} **{username}** - {weekly_score} points\n"
 
-            final_embed.add_field(name="🏆 Rankings", value=leaderboard_text or "No data", inline=False)
-            final_embed.set_footer(text="💡 Solve coding questions to climb the weekly leaderboard! Resets every Monday.")
+            final_embed.add_field(name=" Rankings", value=leaderboard_text or "No data", inline=False)
+            final_embed.set_footer(text=" Solve coding questions to climb the weekly leaderboard! Resets every Monday.")
             
             # Add timeout protection for edit operation
             try:
@@ -114,10 +114,10 @@ class CodeBuddyLeaderboardCog(commands.Cog):
             print(f"[Unexpected error in codeweek command]: {e}")
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ An error occurred while fetching the weekly leaderboard.", ephemeral=True)
+                    await interaction.response.send_message(" An error occurred while fetching the weekly leaderboard.", ephemeral=True)
                 else:
                     try:
-                        await interaction.edit_original_response(content="❌ An error occurred while fetching the weekly leaderboard.")
+                        await interaction.edit_original_response(content=" An error occurred while fetching the weekly leaderboard.")
                     except discord.NotFound:
                         pass
             except Exception:
@@ -142,7 +142,7 @@ class CodeBuddyLeaderboardCog(commands.Cog):
                 week_start, week_end = get_current_week()
                 weekly_list = list(weekly_data) if weekly_data else []
             except asyncio.TimeoutError:
-                await msg.edit(content="❌ Database query timed out. Please try again.")
+                await msg.edit(content=" Database query timed out. Please try again.")
                 return
             
             if not weekly_list:
@@ -163,7 +163,7 @@ class CodeBuddyLeaderboardCog(commands.Cog):
             )
 
             leaderboard_text = ""
-            medals = ["🥇", "🥈", "🥉"]
+            medals = ["1.", "2.", "3."]
             
             # Get usernames efficiently - use cached data only
             for i, (user_id, weekly_score) in enumerate(weekly_list):
@@ -190,14 +190,14 @@ class CodeBuddyLeaderboardCog(commands.Cog):
                 
                 leaderboard_text += f"{medal} **{username}** - {weekly_score} points\n"
 
-            final_embed.add_field(name="🏆 Rankings", value=leaderboard_text or "No data", inline=False)
-            final_embed.set_footer(text="💡 Solve coding questions to climb the weekly leaderboard! Resets every Monday.")
+            final_embed.add_field(name=" Rankings", value=leaderboard_text or "No data", inline=False)
+            final_embed.set_footer(text=" Solve coding questions to climb the weekly leaderboard! Resets every Monday.")
             
             await msg.edit(embed=final_embed)
 
         except Exception as e:
             print(f"[Unexpected error in codeweek command]: {e}")
-            await ctx.send("❌ An error occurred while fetching the weekly leaderboard.")
+            await ctx.send(" An error occurred while fetching the weekly leaderboard.")
 
     @app_commands.command(name="codestreak", description="Show the coding streak leaderboard")
     async def codestreak(self, interaction: discord.Interaction):
@@ -206,7 +206,7 @@ class CodeBuddyLeaderboardCog(commands.Cog):
         try:
             # Immediate simple response first
             embed = discord.Embed(
-                title="🔥 Coding Streak Leaderboard",
+                title=" Coding Streak Leaderboard",
                 description="Loading streak leaderboard...",
                 color=0xff6b35
             )
@@ -217,13 +217,13 @@ class CodeBuddyLeaderboardCog(commands.Cog):
                 streak_data = await asyncio.wait_for(get_streak_leaderboard(10), timeout=10.0)
                 streak_list = list(streak_data) if streak_data else []
             except asyncio.TimeoutError:
-                await interaction.edit_original_response(content="❌ Database query timed out. Please try again.")
+                await interaction.edit_original_response(content=" Database query timed out. Please try again.")
                 return
             
             if not streak_list:
                 updated_embed = discord.Embed(
-                    title="🔥 Coding Streak Leaderboard",
-                    description="No active streaks found!\n Solve any question correctly to start streak. 🔥",
+                    title=" Coding Streak Leaderboard",
+                    description="No active streaks found!\n Solve any question correctly to start streak. ",
                     color=0xff6b35
                 )
                 try:
@@ -236,13 +236,13 @@ class CodeBuddyLeaderboardCog(commands.Cog):
 
             # Create final streak leaderboard embed
             final_embed = discord.Embed(
-                title="🔥 Coding Streak Leaderboard",
+                title=" Coding Streak Leaderboard",
                 description="Top coding streaks (Consecutive correct answers)",
                 color=0xff6b35
             )
 
             leaderboard_text = ""
-            medals = ["🥇", "🥈", "🥉"]
+            medals = ["1.", "2.", "3."]
             
             # Get usernames efficiently - use cached data only
             for i, (user_id, current_streak, best_streak) in enumerate(streak_list):
@@ -267,15 +267,15 @@ class CodeBuddyLeaderboardCog(commands.Cog):
                 else:
                     medal = f"{i+1:2d}."
                 
-                leaderboard_text += f"{medal} **{username}** - {current_streak} questions 🔥"
+                leaderboard_text += f"{medal} **{username}** - {current_streak} questions "
                 if best_streak > current_streak:
                     leaderboard_text += f" (Best: {best_streak})"
                 leaderboard_text += "\n"
 
-            final_embed.add_field(name="🔥 Current Streaks", value=leaderboard_text or "No data", inline=False)
+            final_embed.add_field(name=" Current Streaks", value=leaderboard_text or "No data", inline=False)
             
             final_embed.add_field(
-                name="💡 How Streaks Work", 
+                name=" How Streaks Work", 
                 value="• Answer questions correctly in a row to build your streak\n• Giving a wrong answer resets your current streak\n• Your best streak is always remembered!", 
                 inline=False
             )
@@ -295,10 +295,10 @@ class CodeBuddyLeaderboardCog(commands.Cog):
             print(f"[Unexpected error in codestreak command]: {e}")
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ An error occurred while fetching the streak leaderboard.", ephemeral=True)
+                    await interaction.response.send_message(" An error occurred while fetching the streak leaderboard.", ephemeral=True)
                 else:
                     try:
-                        await interaction.edit_original_response(content="❌ An error occurred while fetching the streak leaderboard.")
+                        await interaction.edit_original_response(content=" An error occurred while fetching the streak leaderboard.")
                     except discord.NotFound:
                         pass
             except Exception:
@@ -311,7 +311,7 @@ class CodeBuddyLeaderboardCog(commands.Cog):
         try:
             # Immediate simple response first
             embed = discord.Embed(
-                title="🔥 Coding Streak Leaderboard",
+                title=" Coding Streak Leaderboard",
                 description="Loading streak leaderboard...",
                 color=0xff6b35
             )
@@ -322,13 +322,13 @@ class CodeBuddyLeaderboardCog(commands.Cog):
                 streak_data = await asyncio.wait_for(get_streak_leaderboard(10), timeout=10.0)
                 streak_list = list(streak_data) if streak_data else []
             except asyncio.TimeoutError:
-                await msg.edit(content="❌ Database query timed out. Please try again.")
+                await msg.edit(content=" Database query timed out. Please try again.")
                 return
             
             if not streak_list:
                 updated_embed = discord.Embed(
-                    title="🔥 Coding Streak Leaderboard",
-                    description="No active streaks found!\n Solve any question correctly to start streak. 🔥",
+                    title=" Coding Streak Leaderboard",
+                    description="No active streaks found!\n Solve any question correctly to start streak. ",
                     color=0xff6b35
                 )
                 await msg.edit(embed=updated_embed)
@@ -336,13 +336,13 @@ class CodeBuddyLeaderboardCog(commands.Cog):
 
             # Create final streak leaderboard embed
             final_embed = discord.Embed(
-                title="🔥 Coding Streak Leaderboard",
+                title=" Coding Streak Leaderboard",
                 description="Top coding streaks (Consecutive correct answers)",
                 color=0xff6b35
             )
 
             leaderboard_text = ""
-            medals = ["🥇", "🥈", "🥉"]
+            medals = ["1.", "2.", "3."]
             
             # Get usernames efficiently - use cached data only
             for i, (user_id, current_streak, best_streak) in enumerate(streak_list):
@@ -367,15 +367,15 @@ class CodeBuddyLeaderboardCog(commands.Cog):
                 else:
                     medal = f"{i+1:2d}."
                 
-                leaderboard_text += f"{medal} **{username}** - {current_streak} questions 🔥"
+                leaderboard_text += f"{medal} **{username}** - {current_streak} questions "
                 if best_streak > current_streak:
                     leaderboard_text += f" (Best: {best_streak})"
                 leaderboard_text += "\n"
 
-            final_embed.add_field(name="🔥 Current Streaks", value=leaderboard_text or "No data", inline=False)
+            final_embed.add_field(name=" Current Streaks", value=leaderboard_text or "No data", inline=False)
             
             final_embed.add_field(
-                name="💡 How Streaks Work", 
+                name=" How Streaks Work", 
                 value="• Answer questions correctly in a row to build your streak\n• Giving a wrong answer resets your current streak\n• Your best streak is always remembered!", 
                 inline=False
             )
@@ -385,7 +385,7 @@ class CodeBuddyLeaderboardCog(commands.Cog):
 
         except Exception as e:
             print(f"[Unexpected error in codestreak command]: {e}")
-            await ctx.send("❌ An error occurred while fetching the streak leaderboard.")
+            await ctx.send(" An error occurred while fetching the streak leaderboard.")
 
 async def setup(bot):
     """Setup function to add this cog to the bot."""

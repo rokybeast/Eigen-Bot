@@ -68,11 +68,11 @@ class CodeBuddyQuizCog(commands.Cog):
             options_text = "\n".join(f"**{letter})** {option}" for letter, option in zip(options_letters, q["options"]))
             
             embed = discord.Embed(
-                title="❓ Coding Quiz",
+                title=" Coding Quiz",
                 description=f"**{self.current_question}**\n\n{options_text}",
                 color=discord.Color.blurple()
             )
-            footer_text = "⚡ BONUS QUESTION – double points!" if self.bonus_active else "Answer with 'a', 'b', or 'c'."
+            footer_text = " BONUS QUESTION – double points!" if self.bonus_active else "Answer with 'a', 'b', or 'c'."
             lang_name = q.get("language", "General")
             embed.set_footer(text=f"{lang_name} • {footer_text}")
 
@@ -160,7 +160,7 @@ class CodeBuddyQuizCog(commands.Cog):
                         break
 
                 total_points = points + extra_bonus
-                title = f"🔥 {streak}x Streak!"
+                title = f" {streak}x Streak!"
                 embed = discord.Embed(
                     title=title,
                     description=f"{message.author.mention} answered correctly and earned **{total_points} point(s)**!",
@@ -169,7 +169,7 @@ class CodeBuddyQuizCog(commands.Cog):
                 if extra_bonus > 0:
                     embed.add_field(name="Streak Bonus", value=f"+{extra_bonus}", inline=True)
                 if self.bonus_active:
-                    embed.set_footer(text="⚡ Bonus Question!")
+                    embed.set_footer(text=" Bonus Question!")
                 try:
                     await message.channel.send(embed=embed)
                 except Exception as e:
@@ -191,7 +191,6 @@ class CodeBuddyQuizCog(commands.Cog):
                 if freeze_used:
                     # Streak was protected!
                     try:
-                        await message.add_reaction("❌")
                         freeze_embed = discord.Embed(
                             title="Streak Freeze Activated!",
                             description=f"{message.author.mention} Wrong answer, but your **Streak Freeze** protected your streak!\n\nYour streak remains intact.",
@@ -209,7 +208,6 @@ class CodeBuddyQuizCog(commands.Cog):
                         print(f"[Error resetting user streak]: {e}")
 
                     try:
-                        await message.add_reaction("❌")
                         await message.channel.send(f"{message.author.mention} Wrong answer! Streak reset to 0.")
                     except discord.Forbidden:
                         pass
@@ -224,7 +222,7 @@ class CodeBuddyQuizCog(commands.Cog):
         try:
             # Immediate simple response first
             embed = discord.Embed(
-                title="🏆 Code Leaderboard", 
+                title=" Code Leaderboard", 
                 description="Loading leaderboard...", 
                 color=discord.Color.gold()
             )
@@ -234,7 +232,7 @@ class CodeBuddyQuizCog(commands.Cog):
             lb = await get_leaderboard()
             if not lb:
                 updated_embed = discord.Embed(
-                    title="🏆 Code Leaderboard", 
+                    title=" Code Leaderboard", 
                     description="No leaderboard data yet.", 
                     color=discord.Color.gold()
                 )
@@ -247,7 +245,7 @@ class CodeBuddyQuizCog(commands.Cog):
                 return
 
             desc = ""
-            medals = ["🥇", "🥈", "🥉"]
+            medals = ["1.", "2.", "3."]
             for i, (user_id, score, streak, best) in enumerate(lb, 1):
                 # Use cached user data only for speed
                 user = interaction.guild.get_member(user_id) if interaction.guild else None
@@ -256,9 +254,9 @@ class CodeBuddyQuizCog(commands.Cog):
                 mention = user.mention if user else f"<@{user_id}>"
 
                 medal = medals[i-1] if i <= len(medals) else f"{i}."
-                desc += f"{medal} {mention} - {score} pts 🔥 Streak: {streak} (Best: {best})\n"
+                desc += f"{medal} {mention} - {score} pts Streak: {streak} (Best: {best})\n"
 
-            final_embed = discord.Embed(title="🏆 Code Leaderboard", description=desc, color=discord.Color.gold())
+            final_embed = discord.Embed(title=" Code Leaderboard", description=desc, color=discord.Color.gold())
             
             # Add timeout protection for edit operation
             try:
@@ -277,7 +275,7 @@ class CodeBuddyQuizCog(commands.Cog):
                     await interaction.response.send_message("Error fetching leaderboard.", ephemeral=True)
                 else:
                     try:
-                        await interaction.edit_original_response(content="❌ Error fetching leaderboard.")
+                        await interaction.edit_original_response(content=" Error fetching leaderboard.")
                     except discord.NotFound:
                         pass
             except Exception:
@@ -289,7 +287,7 @@ class CodeBuddyQuizCog(commands.Cog):
         try:
             # Immediate simple response first
             embed = discord.Embed(
-                title="🏆 Code Leaderboard", 
+                title=" Code Leaderboard", 
                 description="Loading leaderboard...", 
                 color=discord.Color.gold()
             )
@@ -299,7 +297,7 @@ class CodeBuddyQuizCog(commands.Cog):
             lb = await get_leaderboard()
             if not lb:
                 updated_embed = discord.Embed(
-                    title="🏆 Code Leaderboard", 
+                    title=" Code Leaderboard", 
                     description="No leaderboard data yet.", 
                     color=discord.Color.gold()
                 )
@@ -307,7 +305,7 @@ class CodeBuddyQuizCog(commands.Cog):
                 return
 
             desc = ""
-            medals = ["🥇", "🥈", "🥉"]
+            medals = ["1.", "2.", "3."]
             for i, (user_id, score, streak, best) in enumerate(lb, 1):
                 # Use cached user data only for speed
                 user = ctx.guild.get_member(user_id) if ctx.guild else None
@@ -316,15 +314,15 @@ class CodeBuddyQuizCog(commands.Cog):
                 mention = user.mention if user else f"<@{user_id}>"
 
                 medal = medals[i-1] if i <= len(medals) else f"{i}."
-                desc += f"{medal} {mention} - {score} pts 🔥 Streak: {streak} (Best: {best})\n"
+                desc += f"{medal} {mention} - {score} pts Streak: {streak} (Best: {best})\n"
 
-            final_embed = discord.Embed(title="🏆 Code Leaderboard", description=desc, color=discord.Color.gold())
+            final_embed = discord.Embed(title=" Code Leaderboard", description=desc, color=discord.Color.gold())
             
             await msg.edit(embed=final_embed)
 
         except Exception as e:
             print(f"[Unexpected error in codeleaderboard command]: {e}")
-            await ctx.send("❌ Error fetching leaderboard.")
+            await ctx.send(" Error fetching leaderboard.")
 
     @app_commands.command(name="codestats", description="Show your personal coding quiz stats.")
     async def codestats(self, interaction: discord.Interaction):
@@ -344,9 +342,9 @@ class CodeBuddyQuizCog(commands.Cog):
                 title=f"{interaction.user.display_name}'s Stats",
                 color=discord.Color.blurple()
             )
-            embed.add_field(name="💎 Points", value=str(score), inline=False)
-            embed.add_field(name="🔥 Streak", value=f"{streak} (current)\n{best} (best)", inline=False)
-            embed.add_field(name="🏆 Rank", value=f"#{rank}" if rank else "Unranked", inline=False)
+            embed.add_field(name=" Points", value=str(score), inline=False)
+            embed.add_field(name=" Streak", value=f"{streak} (current)\n{best} (best)", inline=False)
+            embed.add_field(name=" Rank", value=f"#{rank}" if rank else "Unranked", inline=False)
 
             # Footer mit Punkte-Differenz
             if gap is not None and higher_id is not None:
@@ -355,9 +353,9 @@ class CodeBuddyQuizCog(commands.Cog):
                     higher_name = higher_user.display_name if higher_user else f"User {higher_id}"
                 except Exception:
                     higher_name = f"User {higher_id}"
-                embed.set_footer(text=f"⚡ {gap} point(s) behind {higher_name}")
+                embed.set_footer(text=f" {gap} point(s) behind {higher_name}")
             else:
-                embed.set_footer(text="🏆 You are at the top!")
+                embed.set_footer(text=" You are at the top!")
 
             await interaction.response.send_message(embed=embed)
 
@@ -387,9 +385,9 @@ class CodeBuddyQuizCog(commands.Cog):
                 title=f"{ctx.author.display_name}'s Stats",
                 color=discord.Color.blurple()
             )
-            embed.add_field(name="💎 Points", value=str(score), inline=False)
-            embed.add_field(name="🔥 Streak", value=f"{streak} (current)\n{best} (best)", inline=False)
-            embed.add_field(name="🏆 Rank", value=f"#{rank}" if rank else "Unranked", inline=False)
+            embed.add_field(name=" Points", value=str(score), inline=False)
+            embed.add_field(name=" Streak", value=f"{streak} (current)\n{best} (best)", inline=False)
+            embed.add_field(name=" Rank", value=f"#{rank}" if rank else "Unranked", inline=False)
 
             # Footer mit Punkte-Differenz
             if gap is not None and higher_id is not None:
@@ -398,9 +396,9 @@ class CodeBuddyQuizCog(commands.Cog):
                     higher_name = higher_user.display_name if higher_user else f"User {higher_id}"
                 except Exception:
                     higher_name = f"User {higher_id}"
-                embed.set_footer(text=f"⚡ {gap} point(s) behind {higher_name}")
+                embed.set_footer(text=f" {gap} point(s) behind {higher_name}")
             else:
-                embed.set_footer(text="🏆 You are at the top!")
+                embed.set_footer(text=" You are at the top!")
 
             await ctx.send(embed=embed)
 
