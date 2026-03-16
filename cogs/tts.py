@@ -66,7 +66,8 @@ class Say(commands.Cog):
         fp = BytesIO()
         async for chunk in comm.stream():
             if chunk["type"] == "audio":
-                fp.write(chunk["data"])
+                if "data" in chunk:
+                    fp.write(chunk["data"])
 
         fp.seek(0)
         return fp
