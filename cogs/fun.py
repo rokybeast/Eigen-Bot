@@ -179,6 +179,23 @@ class Fun(commands.Cog):
             self._absolute_template_cache_bytes = template_bytes
             self._absolute_template_cache_expires_at = now + ABSOLUTE_TEMPLATE_CACHE_TTL_SECONDS
             return template_bytes
+
+    @commands.hybrid_command(name="fridge", help="Send a fridge image")
+    async def fridge(self, ctx: commands.Context):
+        """Send a fridge image (simple utility)."""
+        fridge_images = [
+            "https://upload.wikimedia.org/wikipedia/commons/4/4e/Refrigerator.jpg",
+            "https://upload.wikimedia.org/wikipedia/commons/0/0c/Refrigerator-open.jpg",
+        ]
+
+        url = random.choice(fridge_images)
+        embed = discord.Embed(
+            title="Fridge",
+            color=0x3498DB,
+            timestamp=datetime.now(timezone.utc),
+        )
+        embed.set_image(url=url)
+        await ctx.reply(embed=embed, mention_author=False)
     @commands.hybrid_command(name="compliment", help="Receive a professional programming compliment")
     async def compliment(self, ctx: commands.Context, member: Optional[discord.Member] = None):
         """Give a professional compliment to yourself or another member."""

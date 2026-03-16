@@ -47,9 +47,21 @@ def get_random_question(questions: list):
 
 
 async def fetch_programming_meme() -> str:
-    # Minimal placeholder: return a stock image URL or a short message
-    # In production, this would call an external API
-    return "https://i.imgur.com/3G9jQ.jpg"
+    # Minimal implementation: random choice from a small curated list.
+    # This avoids repeating the same meme every time without relying on external APIs.
+    meme_urls = [
+        "https://i.imgur.com/3G9jQ.jpg",
+        "https://i.imgur.com/2QZpF0B.jpg",
+        "https://i.imgur.com/8p0Q8Jk.jpg",
+        "https://i.imgur.com/N9bG8cR.jpg",
+        "https://i.imgur.com/BY6L8dP.jpg",
+        "https://i.imgur.com/9Y9yCwE.jpg",
+        "https://i.imgur.com/7QpB6hO.jpg",
+        "https://i.imgur.com/7Z2W9Qn.jpg",
+        "https://i.imgur.com/1E7oQpP.jpg",
+        "https://i.imgur.com/qk1GzQp.jpg",
+    ]
+    return random.choice(meme_urls)
 
 
 def sanitize_input(text: str, max_len: int = 1000) -> str:

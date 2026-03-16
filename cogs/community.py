@@ -1,13 +1,17 @@
-"""Community engagement prefix commands (simplified).
+"""Community engagement commands.
 
-Provides quote, question, meme and suggestion commands. Persistence for
-suggestions/challenges/QOTD removed per simplification request.
+Provides quote, question, and meme commands.
+
+Note: Suggestion submission is handled by the dedicated Suggestions cog
+(`cogs/suggestions.py`). This file intentionally does not register a `suggest`
+command to avoid command name conflicts.
 """
 
 import discord
 from discord.ext import commands
 from discord import app_commands
 import json
+from pathlib import Path
 from datetime import datetime, timezone
 from utils.helpers import (
     create_success_embed,
@@ -25,16 +29,27 @@ class CommunityCommands(commands.Cog):
         self.load_data()
 
     def load_data(self):
+        base_dir = Path(__file__).resolve().parents[1]
         try:
-            with open('src/data/questions.json', 'r', encoding='utf-8') as f:
+            # Prefer local repo data folder.
+            questions_path = base_dir / 'data' / 'coding_questions.json'
+            with open(questions_path, 'r', encoding='utf-8') as f:
                 self.questions = json.load(f)
         except FileNotFoundError:
             self.questions = []
         try:
-            with open('src/data/quotes.json', 'r', encoding='utf-8') as f:
+            quotes_path = base_dir / 'data' / 'quotes.json'
+            with open(quotes_path, 'r', encoding='utf-8') as f:
                 self.quotes = json.load(f)
         except FileNotFoundError:
-            self.quotes = []
+            # Fallback built-in quotes if file is missing.
+            self.quotes = [
+                "Talk is cheap. Show me the code. — Linus Torvalds",
+                "Programs must be written for people to read. — Harold Abelson",
+                "Simplicity is prerequisite for reliability. — Edsger W. Dijkstra",
+                "First, solve the problem. Then, write the code. — John Johnson",
+                "Before software can be reusable it first has to be usable. — Ralph Johnson",
+            ]
 
     @commands.hybrid_command(name='quote', help='Get a random motivational/programming quote')
     async def quote(self, ctx: commands.Context):
@@ -75,26 +90,6 @@ class CommunityCommands(commands.Cog):
                 timestamp=datetime.now(tz=timezone.utc)
             )
         embed.set_footer(text='CodeVerse Bot | Programming Humor')
-        await ctx.reply(embed=embed, mention_author=False)
-
-    @commands.hybrid_command(name='suggest', help='Submit a suggestion (ephemeral – not stored)')
-    async def suggest(self, ctx: commands.Context, *, suggestion: str):
-        suggestion = sanitize_input(suggestion, 1000)
-        if len(suggestion.strip()) < 10:
-            embed = discord.Embed(
-                title='Suggestion Too Short',
-                description='Suggestions must be at least 10 characters long.',
-                color=0xE74C3C
-            )
-            await ctx.reply(embed=embed, mention_author=False)
-            return
-        embed = discord.Embed(
-            title='Suggestion Received',
-            description=f"Thank you for your feedback.\n\n**Your suggestion:** {suggestion[:200]}{'...' if len(suggestion) > 200 else ''}",
-            color=0x2ECC71,
-            timestamp=datetime.now(tz=timezone.utc)
-        )
-        embed.set_footer(text='CodeVerse Bot | Community Feedback')
         await ctx.reply(embed=embed, mention_author=False)
 
     @commands.hybrid_command(name='reload-data', help='Reload quotes & questions (Admin only)')

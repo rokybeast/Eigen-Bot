@@ -17,6 +17,7 @@ from utils.helpers import create_success_embed, create_error_embed, create_warni
 from types import SimpleNamespace
 from typing import Any
 from collections import defaultdict
+from urllib.parse import urlparse
 
 
 class ReactionProxy:
@@ -863,7 +864,8 @@ class StarboardSystem(commands.Cog):
         try:
             self.logger.debug(f"📤 Starboard: Sending starboard embed to {starboard_channel.name}")
             embed = await self.create_starboard_embed(message, star_count, settings)
-            starboard_msg = await starboard_channel.send(embed=embed)
+            extra_content = self._build_starboard_extra_content(message)
+            starboard_msg = await starboard_channel.send(content=extra_content, embed=embed)
 
             # Try to add the star emoji reaction to both starboard msg and original message so it's obvious
             try:
@@ -898,7 +900,8 @@ class StarboardSystem(commands.Cog):
         try:
             starboard_msg = await starboard_channel.fetch_message(starboard_msg_id)
             embed = await self.create_starboard_embed(message, star_count, settings)
-            await starboard_msg.edit(embed=embed)
+            extra_content = self._build_starboard_extra_content(message)
+            await starboard_msg.edit(content=extra_content, embed=embed)
             # Ensure the bot reacts to both starboard and original messages
             try:
                 await starboard_msg.add_reaction(settings.get('star_emoji', '⭐'))
@@ -963,8 +966,13 @@ class StarboardSystem(commands.Cog):
         # Add star count field (single, non-duplicated display)
         embed.add_field(name="Stars", value=f"{star_emoji} {star_count}", inline=True)
 
-        # Try to attach first image from attachments or embeds
+        # Attachment handling:
+        # - First image (if any) is displayed inline via embed.set_image.
+        # - Video(s) are included as raw URLs in the starboard message content so Discord shows a player.
+        # - Non-image attachments are listed as links.
         image_url = None
+        video_links: list[str] = []
+        other_links: list[str] = []
         try:
             for att in getattr(message, 'attachments', []):
                 fname = getattr(att, 'filename', '') or ''
@@ -977,6 +985,19 @@ class StarboardSystem(commands.Cog):
                     image_url = att.url
                     break
 
+            # Collect video + other attachment links (do not stop at first image)
+            for att in getattr(message, 'attachments', []):
+                fname = getattr(att, 'filename', '') or ''
+                ctype = getattr(att, 'content_type', None)
+                lower = fname.lower()
+                is_image = (ctype and str(ctype).startswith('image')) or any(lower.endswith(ext) for ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp'))
+                is_video = (ctype and str(ctype).startswith('video')) or any(lower.endswith(ext) for ext in ('.mp4', '.webm', '.mov'))
+
+                if is_video:
+                    video_links.append(att.url)
+                elif not is_image:
+                    other_links.append(att.url)
+
             # Check embeds for an image if no attachment image
             if not image_url:
                 for emb in getattr(message, 'embeds', []) or []:
@@ -985,6 +1006,18 @@ class StarboardSystem(commands.Cog):
                         break
         except Exception:
             image_url = None
+
+        # Add attachment link fields
+        try:
+            if video_links:
+                # Keep within embed field limits
+                shown = video_links[:3]
+                embed.add_field(name="Video", value="\n".join(shown), inline=False)
+            if other_links:
+                shown = other_links[:5]
+                embed.add_field(name="Attachments", value="\n".join(shown), inline=False)
+        except Exception:
+            pass
 
         if image_url:
             try:
@@ -999,6 +1032,52 @@ class StarboardSystem(commands.Cog):
 
         # No extra footer or timestamp to keep it compact
         return embed
+
+    def _build_starboard_extra_content(self, message: discord.Message) -> Optional[str]:
+        """Build additional message content for starboard posts.
+
+        Discord renders a playable video preview when the CDN URL is in the message content.
+        Embeds alone often won't show video attachments.
+        """
+        urls: list[str] = []
+
+        # Prefer actual attachment URLs for uploaded videos.
+        for att in getattr(message, 'attachments', []):
+            fname = (getattr(att, 'filename', '') or '').lower()
+            ctype = getattr(att, 'content_type', None)
+            is_video = (ctype and str(ctype).startswith('video')) or any(fname.endswith(ext) for ext in ('.mp4', '.webm', '.mov'))
+            if is_video and getattr(att, 'url', None):
+                urls.append(att.url)
+
+        # Also handle embed video links (e.g., link previews) when present.
+        for emb in getattr(message, 'embeds', []) or []:
+            try:
+                # Some embeds carry a video.url
+                v = getattr(emb, 'video', None)
+                vurl = getattr(v, 'url', None) if v else None
+                if vurl:
+                    urls.append(str(vurl))
+                    continue
+                # Fallback to emb.url when it's a video-type embed
+                if getattr(emb, 'type', None) in ("video", "gifv") and getattr(emb, 'url', None):
+                    urls.append(str(emb.url))
+            except Exception:
+                continue
+
+        # De-dup while keeping order
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for u in urls:
+            if not u or u in seen:
+                continue
+            seen.add(u)
+            deduped.append(u)
+
+        if not deduped:
+            return None
+
+        # Cap to avoid hitting 2000 char limit.
+        return "\n".join(deduped[:3])
 
     # ==================== ADMIN UTILITIES ====================
     
