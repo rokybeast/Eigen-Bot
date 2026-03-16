@@ -1515,5 +1515,397 @@
       "Makes object properties private"
     ],
     "correct": "a"
+  },
+  {
+    "language": "FastAPI",
+    "question": "Which decorator defines a GET endpoint in FastAPI?",
+    "options": [
+      "@app.get('/path')",
+      "@app.route('/path', method='GET')",
+      "@app.fetch('/path')"
+    ],
+    "correct": "a",
+    "explanation": "FastAPI uses HTTP method decorators like `@app.get`, `@app.post`, etc."
+  },
+  {
+    "language": "FastAPI",
+    "question": "What is FastAPI's main reason for using Python type hints?",
+    "options": [
+      "To enable request/response validation and automatic docs",
+      "To make code run faster",
+      "To replace unit tests"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "FastAPI",
+    "question": "What does the `response_model` parameter do in FastAPI?",
+    "options": [
+      "Controls how the response is validated/serialized and documented",
+      "Forces the endpoint to return JSON only",
+      "Automatically retries failed requests"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "FastAPI",
+    "question": "Which helper is used for dependency injection in FastAPI?",
+    "options": [
+      "Depends",
+      "Inject",
+      "Provide"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Uvicorn",
+    "question": "What is Uvicorn?",
+    "options": [
+      "An ASGI server for running async Python web apps",
+      "A Python ORM",
+      "A unit testing framework"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Uvicorn",
+    "question": "What does `uvicorn main:app --reload` do?",
+    "options": [
+      "Starts the ASGI app and auto-reloads on code changes",
+      "Runs the app in production mode only",
+      "Builds a Docker image for the app"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Uvicorn",
+    "question": "Which Uvicorn flag runs multiple worker processes?",
+    "options": [
+      "--workers",
+      "--threads",
+      "--cluster"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Pydantic",
+    "question": "In Pydantic v2, what is `BaseModel` primarily used for?",
+    "options": [
+      "Data validation and serialization using Python type hints",
+      "Starting an HTTP server",
+      "Compiling Python to bytecode"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Pydantic",
+    "question": "In Pydantic v2, which method is commonly used to export model data as a dict?",
+    "options": [
+      "model_dump()",
+      "to_dict()",
+      "export_dict()"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Pydantic",
+    "question": "What does `Field(...)` help with in Pydantic models?",
+    "options": [
+      "Defining defaults and validation constraints/metadata",
+      "Creating database tables",
+      "Running background tasks"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Java",
+    "question": "What is the correct Java entry point method signature?",
+    "options": [
+      "public static void main(String[] args)",
+      "public void main(String[] args)",
+      "static public int main(String args[])"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Java",
+    "question": "For Java `String`s, what is the difference between `==` and `.equals()`?",
+    "options": [
+      "`==` compares references; `.equals()` compares content",
+      "`==` compares content; `.equals()` compares references",
+      "They always behave the same for Strings"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Java",
+    "question": "What does the `final` keyword mean for a variable?",
+    "options": [
+      "It cannot be reassigned after initialization",
+      "It must be initialized to 0",
+      "It becomes a global variable"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Java",
+    "question": "Which collection typically provides average-case O(1) lookup by key?",
+    "options": [
+      "HashMap",
+      "ArrayList",
+      "LinkedList"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Go",
+    "question": "In Go, what does `:=` do?",
+    "options": [
+      "Short variable declaration with type inference",
+      "Declares a constant",
+      "Creates a pointer"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Go",
+    "question": "What does the `go` keyword do?",
+    "options": [
+      "Starts a new goroutine",
+      "Imports a package",
+      "Defines a struct"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Go",
+    "question": "What does `defer` do in Go?",
+    "options": [
+      "Schedules a function call to run when the surrounding function returns",
+      "Pauses a goroutine",
+      "Catches panics"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Go",
+    "question": "In Go, which built-in is used to create slices, maps, and channels?",
+    "options": [
+      "make",
+      "new",
+      "alloc"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "R",
+    "question": "Which operator is commonly used for assignment in R?",
+    "options": [
+      "<-",
+      "=:",
+      ":="
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "R",
+    "question": "What does `1:5` produce in R?",
+    "options": [
+      "A vector containing 1, 2, 3, 4, 5",
+      "The number 15",
+      "A list with one element (5)"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "R",
+    "question": "What is `NA` in R?",
+    "options": [
+      "A missing value marker",
+      "A syntax error",
+      "A boolean false"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "R",
+    "question": "What is a data frame in R?",
+    "options": [
+      "A table-like structure where columns can have different types",
+      "A single numeric value",
+      "Only a 3D array"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Zig",
+    "question": "Which keyword declares an immutable binding in Zig?",
+    "options": [
+      "const",
+      "let",
+      "static"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Zig",
+    "question": "How do you import Zig's standard library?",
+    "options": [
+      "const std = @import(\"std\");",
+      "import std;",
+      "use std;"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Zig",
+    "question": "What does `defer` do in Zig?",
+    "options": [
+      "Runs a statement when the current scope exits",
+      "Delays execution until the next thread",
+      "Disables optimization"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Zig",
+    "question": "What does `try` commonly do in Zig?",
+    "options": [
+      "Propagates an error if the expression is an error",
+      "Starts a unit test",
+      "Converts an int to a float"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Linux",
+    "question": "What does `chmod 755 file` set?",
+    "options": [
+      "Owner: read/write/execute; group/others: read/execute",
+      "Owner: read-only; group: write-only; others: none",
+      "All users: read/write/execute"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Linux",
+    "question": "Which command searches for a pattern recursively in files?",
+    "options": [
+      "grep -r",
+      "ls -r",
+      "cd -r"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Linux",
+    "question": "Which command commonly lists running processes with details?",
+    "options": [
+      "ps aux",
+      "mkfs -l",
+      "tar -p"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Linux",
+    "question": "What file extension is typical for a systemd service unit?",
+    "options": [
+      ".service",
+      ".daemon",
+      ".unitfile"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Linux",
+    "question": "How do you create a symbolic link?",
+    "options": [
+      "ln -s target linkname",
+      "cp -s target linkname",
+      "mv -s target linkname"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Lua",
+    "question": "What is the main data structure in Lua?",
+    "options": [
+      "table",
+      "class",
+      "tuple"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Lua",
+    "question": "How do you declare a local variable in Lua?",
+    "options": [
+      "local x = 1",
+      "var x = 1",
+      "let x = 1"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Lua",
+    "question": "What is the index of the first element in a typical Lua array-style table?",
+    "options": [
+      "1",
+      "0",
+      "-1"
+    ],
+    "correct": "a",
+    "explanation": "Lua arrays are conventionally 1-indexed."
+  },
+  {
+    "language": "Lua",
+    "question": "How do you concatenate strings in Lua?",
+    "options": [
+      "..",
+      "+",
+      "&"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Lua",
+    "question": "What does `nil` represent in Lua?",
+    "options": [
+      "The absence of a value",
+      "An empty string",
+      "Zero"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Git",
+    "question": "What does `git clone` do?",
+    "options": [
+      "Creates a local copy of a remote repository",
+      "Deletes a branch",
+      "Squashes commits"
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "Docker",
+    "question": "Which command builds a Docker image from a Dockerfile in the current directory?",
+    "options": [
+      "docker build -t myimage .",
+      "docker run -t myimage .",
+      "docker push -t myimage ."
+    ],
+    "correct": "a"
+  },
+  {
+    "language": "SQL",
+    "question": "Which query counts rows in a table?",
+    "options": [
+      "SELECT COUNT(*) FROM table;",
+      "SELECT SUM(*) FROM table;",
+      "SELECT TOTAL(*) FROM table;"
+    ],
+    "correct": "a"
   }
 ]

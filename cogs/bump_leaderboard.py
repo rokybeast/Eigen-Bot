@@ -13,13 +13,14 @@ so we cannot directly "listen to /bump" when Disboard handles it.
 Instead, we listen for Disboard's **confirmation message** (e.g. "Bump done")
 in the bump channel and attribute the bump to the mentioned user.
 
-Data is stored in `data/bump_leaderboard.json` and is created automatically.
+Data is stored in the SQLite database (`botdata.db`).
+
+Note: This implementation intentionally does NOT migrate/import existing JSON data.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 import time
@@ -28,9 +29,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import aiosqlite
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+from utils.database import DATABASE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -90,12 +94,11 @@ class BumpLeaderboard(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-        base_dir = Path(__file__).resolve().parents[1]
-        self._data_path = base_dir / "data" / "bump_leaderboard.json"
+        self._db_path = Path(DATABASE_NAME)
+        self._db_lock = asyncio.Lock()
+        self._db_ready = False
 
         self._lock = asyncio.Lock()
-        self._data: Dict[str, Any] = {}
-        self._loaded = False
 
         # In-memory cache to avoid repeatedly parsing ISO strings for cooldown checks.
         self._last_bump_cache: Dict[int, Dict[int, datetime]] = {}
@@ -107,7 +110,7 @@ class BumpLeaderboard(commands.Cog):
         # Disboard's confirmation embed often does not mention the user.
         self._recent_bump_invoker: Dict[Tuple[int, int], Tuple[int, float]] = {}
 
-        # Load data lazily on first use (and also attempt in background early).
+        # Ensure DB tables exist (no JSON migration).
         self.bot.loop.create_task(self.load_data())
 
     # ----------------------------
@@ -234,10 +237,7 @@ class BumpLeaderboard(commands.Cog):
             return
 
         await self.load_data()
-
-        async with self._lock:
-            guild_bucket = self._ensure_guild_bucket(message.guild.id)
-            bump_channel_id = guild_bucket.get("bump_channel_id")
+        bump_channel_id = await self._get_bump_channel_id(message.guild.id)
 
         if not bump_channel_id:
             return
@@ -300,99 +300,110 @@ class BumpLeaderboard(commands.Cog):
     # ----------------------------
 
     async def load_data(self) -> None:
-        """Load bump data from disk (creates file if missing)."""
-        needs_initial_save = False
-
-        async with self._lock:
-            if self._loaded and isinstance(self._data, dict) and "guilds" in self._data:
-                return
-
-            self._data_path.parent.mkdir(parents=True, exist_ok=True)
-
-            if not self._data_path.exists():
-                self._data = {
-                    "version": DATA_VERSION,
-                    "guilds": {},
-                    "cooldown_seconds": DEFAULT_COOLDOWN_SECONDS,
-                }
-                self._loaded = True
-                needs_initial_save = True
-
-        if needs_initial_save:
-            await self.save_data()
+        """Ensure the bump leaderboard tables exist."""
+        if self._db_ready:
             return
 
-        async with self._lock:
+        async with self._db_lock:
+            if self._db_ready:
+                return
 
-            try:
-                raw = await asyncio.to_thread(self._data_path.read_text, encoding="utf-8")
-                loaded = json.loads(raw) if raw.strip() else {}
-            except Exception as e:
-                logger.exception("Failed reading bump leaderboard data; recreating file: %s", e)
-                loaded = {}
+            async with aiosqlite.connect(self._db_path) as db:
+                await db.execute("PRAGMA journal_mode=WAL")
 
-            if not isinstance(loaded, dict):
-                loaded = {}
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS bump_settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )
+                    """
+                )
+                await db.execute(
+                    "INSERT OR IGNORE INTO bump_settings (key, value) VALUES (?, ?)",
+                    ("cooldown_seconds", str(DEFAULT_COOLDOWN_SECONDS)),
+                )
 
-            loaded.setdefault("version", DATA_VERSION)
-            loaded.setdefault("guilds", {})
-            loaded.setdefault("cooldown_seconds", DEFAULT_COOLDOWN_SECONDS)
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS bump_guild_config (
+                        guild_id INTEGER PRIMARY KEY,
+                        bump_channel_id INTEGER
+                    )
+                    """
+                )
 
-            self._data = loaded
-            self._loaded = True
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS bump_guild_stats (
+                        guild_id INTEGER PRIMARY KEY,
+                        total_bumps INTEGER NOT NULL DEFAULT 0,
+                        last_bumper_id INTEGER,
+                        last_bump_time TEXT
+                    )
+                    """
+                )
 
-    async def save_data(self) -> None:
-        """Save bump data to disk."""
-        async with self._lock:
-            self._data_path.parent.mkdir(parents=True, exist_ok=True)
-            payload = json.dumps(self._data, indent=2, ensure_ascii=False, sort_keys=True)
-            await asyncio.to_thread(self._data_path.write_text, payload, encoding="utf-8")
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS bump_user_stats (
+                        guild_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        username TEXT,
+                        total_bumps INTEGER NOT NULL DEFAULT 0,
+                        last_bump_time TEXT,
+                        PRIMARY KEY (guild_id, user_id)
+                    )
+                    """
+                )
 
-    # ----------------------------
-    # Data model helpers
-    # ----------------------------
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_bump_user_stats_total ON bump_user_stats (guild_id, total_bumps DESC)"
+                )
+                await db.commit()
 
-    def _ensure_guild_bucket(self, guild_id: int) -> Dict[str, Any]:
-        guilds: Dict[str, Any] = self._data.setdefault("guilds", {})
-        bucket: Dict[str, Any] = guilds.setdefault(
-            str(guild_id),
-            {
-                "bump_channel_id": None,
-                "users": {},
-                "total_bumps": 0,
-                "last_bumper_id": None,
-                "last_bump_time": None,
-            },
-        )
+            self._db_ready = True
 
-        bucket.setdefault("bump_channel_id", None)
-        bucket.setdefault("users", {})
-        bucket.setdefault("total_bumps", 0)
-        bucket.setdefault("last_bumper_id", None)
-        bucket.setdefault("last_bump_time", None)
-        return bucket
+    async def _get_cooldown_seconds(self) -> int:
+        await self.load_data()
+        async with aiosqlite.connect(self._db_path) as db:
+            async with db.execute(
+                "SELECT value FROM bump_settings WHERE key = ?",
+                ("cooldown_seconds",),
+            ) as cursor:
+                row = await cursor.fetchone()
 
-    def _cooldown_seconds(self) -> int:
-        return _safe_int(self._data.get("cooldown_seconds"), DEFAULT_COOLDOWN_SECONDS)
+        if not row or row[0] is None:
+            return DEFAULT_COOLDOWN_SECONDS
+        return _safe_int(row[0], DEFAULT_COOLDOWN_SECONDS)
 
-    def _get_user_bucket(self, guild_bucket: Dict[str, Any], user: discord.abc.User) -> Dict[str, Any]:
-        users: Dict[str, Any] = guild_bucket.setdefault("users", {})
-        u: Dict[str, Any] = users.setdefault(
-            str(user.id),
-            {
-                "user_id": user.id,
-                "username": getattr(user, "display_name", user.name),
-                "total_bumps": 0,
-                "last_bump_time": None,
-            },
-        )
+    async def _get_bump_channel_id(self, guild_id: int) -> Optional[int]:
+        await self.load_data()
+        async with aiosqlite.connect(self._db_path) as db:
+            async with db.execute(
+                "SELECT bump_channel_id FROM bump_guild_config WHERE guild_id = ?",
+                (int(guild_id),),
+            ) as cursor:
+                row = await cursor.fetchone()
+        if not row or row[0] is None:
+            return None
+        try:
+            return int(row[0])
+        except (TypeError, ValueError):
+            return None
 
-        # Keep username current.
-        u["username"] = getattr(user, "display_name", user.name)
-        u.setdefault("user_id", user.id)
-        u.setdefault("total_bumps", 0)
-        u.setdefault("last_bump_time", None)
-        return u
+    async def _set_bump_channel_id(self, guild_id: int, channel_id: int) -> None:
+        await self.load_data()
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO bump_guild_config (guild_id, bump_channel_id) VALUES (?, ?)",
+                (int(guild_id), int(channel_id)),
+            )
+            await db.execute(
+                "INSERT OR IGNORE INTO bump_guild_stats (guild_id, total_bumps) VALUES (?, 0)",
+                (int(guild_id),),
+            )
+            await db.commit()
 
     def _format_relative_time(self, dt: Optional[datetime]) -> str:
         if not dt:
@@ -430,86 +441,156 @@ class BumpLeaderboard(commands.Cog):
         """
         now = now or _utcnow()
 
-        async with self._lock:
-            guild_bucket = self._ensure_guild_bucket(guild.id)
-            user_bucket = self._get_user_bucket(guild_bucket, user)
+        await self.load_data()
+        now_iso = _dt_to_iso(now)
+        username = getattr(user, "display_name", getattr(user, "name", str(user.id)))
 
-            # Cooldown check (only for positive increments).
-            if amount > 0 and not bypass_cooldown:
-                cooldown = self._cooldown_seconds()
+        async with self._lock:
+            cooldown = await self._get_cooldown_seconds()
+
+            async with aiosqlite.connect(self._db_path) as db:
+                await db.execute("PRAGMA journal_mode=WAL")
+
+                async with db.execute(
+                    "SELECT total_bumps, last_bump_time FROM bump_user_stats WHERE guild_id = ? AND user_id = ?",
+                    (int(guild.id), int(user.id)),
+                ) as cursor:
+                    row = await cursor.fetchone()
+
+                current_total = _safe_int(row[0], 0) if row else 0
                 last_dt: Optional[datetime] = None
 
                 # Prefer in-memory timestamp cache.
                 last_dt = self._last_bump_cache.get(guild.id, {}).get(user.id)
-                if last_dt is None:
-                    last_dt = _iso_to_dt(user_bucket.get("last_bump_time"))
+                if last_dt is None and row:
+                    last_dt = _iso_to_dt(row[1])
 
-                if last_dt is not None:
+                # Cooldown check (only for positive increments).
+                if amount > 0 and not bypass_cooldown and last_dt is not None:
                     elapsed = (now - last_dt).total_seconds()
                     if elapsed < cooldown:
                         return False, float(cooldown - elapsed)
 
-            # Apply update.
-            current_total = _safe_int(user_bucket.get("total_bumps"), 0)
-            new_total = max(0, current_total + int(amount))
-            user_bucket["total_bumps"] = new_total
+                new_total = max(0, current_total + int(amount))
+                new_last_bump_time = now_iso if amount > 0 else (row[1] if row else None)
 
-            if amount > 0:
-                user_bucket["last_bump_time"] = _dt_to_iso(now)
-                guild_bucket["last_bumper_id"] = user.id
-                guild_bucket["last_bump_time"] = _dt_to_iso(now)
+                await db.execute(
+                    """
+                    INSERT INTO bump_user_stats (guild_id, user_id, username, total_bumps, last_bump_time)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                        username = excluded.username,
+                        total_bumps = excluded.total_bumps,
+                        last_bump_time = excluded.last_bump_time
+                    """,
+                    (int(guild.id), int(user.id), str(username), int(new_total), new_last_bump_time),
+                )
 
-                # Cache for cooldown checks.
-                self._last_bump_cache.setdefault(guild.id, {})[user.id] = now
+                await db.execute(
+                    "INSERT OR IGNORE INTO bump_guild_stats (guild_id, total_bumps) VALUES (?, 0)",
+                    (int(guild.id),),
+                )
 
-            # Update guild total bumps (keep it consistent with user totals).
-            # For small guilds this is fine; avoids drift from manual edits.
-            total = 0
-            for v in guild_bucket.get("users", {}).values():
-                if isinstance(v, dict):
-                    total += _safe_int(v.get("total_bumps"), 0)
-            guild_bucket["total_bumps"] = total
+                async with db.execute(
+                    "SELECT COALESCE(SUM(total_bumps), 0) FROM bump_user_stats WHERE guild_id = ?",
+                    (int(guild.id),),
+                ) as cursor:
+                    total_row = await cursor.fetchone()
 
-        # Save outside of the lock-holder section to reduce contention.
-        await self.save_data()
+                total_bumps = _safe_int(total_row[0], 0) if total_row else 0
+
+                if amount > 0:
+                    await db.execute(
+                        "UPDATE bump_guild_stats SET total_bumps = ?, last_bumper_id = ?, last_bump_time = ? WHERE guild_id = ?",
+                        (int(total_bumps), int(user.id), now_iso, int(guild.id)),
+                    )
+                    self._last_bump_cache.setdefault(guild.id, {})[user.id] = now
+                else:
+                    await db.execute(
+                        "UPDATE bump_guild_stats SET total_bumps = ? WHERE guild_id = ?",
+                        (int(total_bumps), int(guild.id)),
+                    )
+
+                await db.commit()
+
         return True, None
 
     async def get_leaderboard(self, guild: discord.Guild, limit: int = 10) -> List[BumpEntry]:
         """Return sorted bump leaderboard for the guild."""
-        async with self._lock:
-            guild_bucket = self._ensure_guild_bucket(guild.id)
-            rows: List[BumpEntry] = []
+        await self.load_data()
+        lim = max(1, int(limit))
 
-            for user_id_str, u in guild_bucket.get("users", {}).items():
-                if not isinstance(u, dict):
-                    continue
-                user_id = _safe_int(u.get("user_id") or user_id_str, 0)
-                username = str(u.get("username") or f"{user_id}")
-                total_bumps = _safe_int(u.get("total_bumps"), 0)
-                last_bump_time = _iso_to_dt(u.get("last_bump_time"))
-                rows.append(BumpEntry(user_id=user_id, username=username, total_bumps=total_bumps, last_bump_time=last_bump_time))
+        async with aiosqlite.connect(self._db_path) as db:
+            async with db.execute(
+                """
+                SELECT user_id, username, total_bumps, last_bump_time
+                FROM bump_user_stats
+                WHERE guild_id = ?
+                ORDER BY total_bumps DESC, COALESCE(last_bump_time, '') DESC
+                LIMIT ?
+                """,
+                (int(guild.id), int(lim)),
+            ) as cursor:
+                fetched = await cursor.fetchall()
 
-        rows.sort(key=lambda r: (r.total_bumps, (r.last_bump_time or datetime.min.replace(tzinfo=timezone.utc))), reverse=True)
-        return rows[: max(1, int(limit))]
+        rows: List[BumpEntry] = []
+        for user_id, username, total_bumps, last_bump_time in fetched or []:
+            rows.append(
+                BumpEntry(
+                    user_id=_safe_int(user_id, 0),
+                    username=str(username or f"{user_id}"),
+                    total_bumps=_safe_int(total_bumps, 0),
+                    last_bump_time=_iso_to_dt(last_bump_time),
+                )
+            )
+        return rows
 
     async def get_my_stats(self, guild: discord.Guild, user: discord.abc.User) -> BumpEntry:
-        async with self._lock:
-            guild_bucket = self._ensure_guild_bucket(guild.id)
-            user_bucket = self._get_user_bucket(guild_bucket, user)
+        await self.load_data()
+        async with aiosqlite.connect(self._db_path) as db:
+            async with db.execute(
+                "SELECT username, total_bumps, last_bump_time FROM bump_user_stats WHERE guild_id = ? AND user_id = ?",
+                (int(guild.id), int(user.id)),
+            ) as cursor:
+                row = await cursor.fetchone()
+
+        if not row:
             return BumpEntry(
-                user_id=user.id,
-                username=str(user_bucket.get("username") or getattr(user, "display_name", user.name)),
-                total_bumps=_safe_int(user_bucket.get("total_bumps"), 0),
-                last_bump_time=_iso_to_dt(user_bucket.get("last_bump_time")),
+                user_id=int(user.id),
+                username=str(getattr(user, "display_name", getattr(user, "name", str(user.id)))),
+                total_bumps=0,
+                last_bump_time=None,
             )
 
+        username, total_bumps, last_bump_time = row
+        return BumpEntry(
+            user_id=int(user.id),
+            username=str(username or getattr(user, "display_name", getattr(user, "name", str(user.id)))),
+            total_bumps=_safe_int(total_bumps, 0),
+            last_bump_time=_iso_to_dt(last_bump_time),
+        )
+
     async def get_bump_stats(self, guild: discord.Guild) -> Tuple[int, Optional[int], Optional[datetime]]:
-        async with self._lock:
-            guild_bucket = self._ensure_guild_bucket(guild.id)
-            total = _safe_int(guild_bucket.get("total_bumps"), 0)
-            last_bumper_id = _safe_int(guild_bucket.get("last_bumper_id"), 0) or None
-            last_bump_time = _iso_to_dt(guild_bucket.get("last_bump_time"))
-            return total, last_bumper_id, last_bump_time
+        await self.load_data()
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO bump_guild_stats (guild_id, total_bumps) VALUES (?, 0)",
+                (int(guild.id),),
+            )
+            await db.commit()
+
+            async with db.execute(
+                "SELECT total_bumps, last_bumper_id, last_bump_time FROM bump_guild_stats WHERE guild_id = ?",
+                (int(guild.id),),
+            ) as cursor:
+                row = await cursor.fetchone()
+
+        if not row:
+            return 0, None, None
+
+        total_bumps, last_bumper_id, last_bump_time = row
+        last_bumper = _safe_int(last_bumper_id, 0) or None
+        return _safe_int(total_bumps, 0), last_bumper, _iso_to_dt(last_bump_time)
 
     # ----------------------------
     # Permission helpers
@@ -615,11 +696,7 @@ class BumpLeaderboard(commands.Cog):
         if not await self._ensure_manage_guild(ctx):
             return
 
-        await self.load_data()
-        async with self._lock:
-            guild_bucket = self._ensure_guild_bucket(ctx.guild.id)  # type: ignore[union-attr]
-            guild_bucket["bump_channel_id"] = channel.id
-        await self.save_data()
+        await self._set_bump_channel_id(ctx.guild.id, channel.id)  # type: ignore[union-attr]
 
         embed = discord.Embed(
             title="✅ Bump channel set",

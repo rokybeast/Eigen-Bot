@@ -10,7 +10,7 @@ Behavior:
 
 Configuration:
 - Admins set the suggestions channel with `/setsuggestchannel #channel`.
-- Settings are persisted in `data/suggestions.json`.
+- Settings are persisted in the SQLite database (`botdata.db`).
 
 This keeps the main suggestions channel clean while enabling organized discussion.
 """
@@ -18,14 +18,17 @@ This keeps the main suggestions channel clean while enabling organized discussio
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import aiosqlite
+
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+from utils.database import DATABASE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -43,73 +46,52 @@ class Suggestions(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-        base_dir = Path(__file__).resolve().parents[1]
-        self._data_path = base_dir / "data" / "suggestions.json"
+        self._db_path = Path(DATABASE_NAME)
+        self._db_lock = asyncio.Lock()
+        self._db_ready = False
 
-        self._lock = asyncio.Lock()
-        self._data: Dict[str, Any] = {}
-        self._loaded = False
+    async def _ensure_db(self) -> None:
+        """Ensure the suggestions config table exists.
 
-        self.bot.loop.create_task(self.load_data())
-
-    # ----------------------------
-    # Persistence
-    # ----------------------------
-
-    async def load_data(self) -> None:
-        """Load config from disk (creates file if missing)."""
-        needs_initial_save = False
-
-        async with self._lock:
-            if self._loaded and isinstance(self._data, dict) and "guilds" in self._data:
-                return
-
-            self._data_path.parent.mkdir(parents=True, exist_ok=True)
-
-            if not self._data_path.exists():
-                self._data = {"version": DATA_VERSION, "guilds": {}}
-                self._loaded = True
-                needs_initial_save = True
-
-        if needs_initial_save:
-            await self.save_data()
+        Note: This intentionally does NOT import/migrate existing JSON config.
+        """
+        if self._db_ready:
             return
 
-        async with self._lock:
-            try:
-                raw = await asyncio.to_thread(self._data_path.read_text, encoding="utf-8")
-                loaded = json.loads(raw) if raw.strip() else {}
-            except Exception as e:
-                logger.exception("Failed reading suggestions data; recreating file: %s", e)
-                loaded = {}
+        async with self._db_lock:
+            if self._db_ready:
+                return
 
-            if not isinstance(loaded, dict):
-                loaded = {}
+            async with aiosqlite.connect(self._db_path) as db:
+                await db.execute("PRAGMA journal_mode=WAL")
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS suggestions_config (
+                        guild_id INTEGER PRIMARY KEY,
+                        suggestions_channel_id INTEGER
+                    )
+                    """
+                )
+                await db.commit()
 
-            loaded.setdefault("version", DATA_VERSION)
-            loaded.setdefault("guilds", {})
-
-            self._data = loaded
-            self._loaded = True
-
-    async def save_data(self) -> None:
-        async with self._lock:
-            self._data_path.parent.mkdir(parents=True, exist_ok=True)
-            payload = json.dumps(self._data, indent=2, ensure_ascii=False, sort_keys=True)
-            await asyncio.to_thread(self._data_path.write_text, payload, encoding="utf-8")
-
-    def _ensure_guild_bucket(self, guild_id: int) -> Dict[str, Any]:
-        guilds: Dict[str, Any] = self._data.setdefault("guilds", {})
-        bucket: Dict[str, Any] = guilds.setdefault(str(guild_id), {"suggestions_channel_id": None})
-        bucket.setdefault("suggestions_channel_id", None)
-        return bucket
+            self._db_ready = True
 
     async def _get_suggestions_channel_id(self, guild_id: int) -> Optional[int]:
-        await self.load_data()
-        async with self._lock:
-            bucket = self._ensure_guild_bucket(guild_id)
-            cid = bucket.get("suggestions_channel_id")
-            return int(cid) if cid else None
+        await self._ensure_db()
+
+        async with aiosqlite.connect(self._db_path) as db:
+            async with db.execute(
+                "SELECT suggestions_channel_id FROM suggestions_config WHERE guild_id = ?",
+                (int(guild_id),),
+            ) as cursor:
+                row = await cursor.fetchone()
+
+        if not row or row[0] is None:
+            return None
+        try:
+            return int(row[0])
+        except (TypeError, ValueError):
+            return None
 
     # ----------------------------
     # Permission helpers
@@ -183,11 +165,13 @@ class Suggestions(commands.Cog):
         if not await self._ensure_manage_guild(ctx):
             return
 
-        await self.load_data()
-        async with self._lock:
-            bucket = self._ensure_guild_bucket(ctx.guild.id)  # type: ignore[union-attr]
-            bucket["suggestions_channel_id"] = channel.id
-        await self.save_data()
+        await self._ensure_db()
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO suggestions_config (guild_id, suggestions_channel_id) VALUES (?, ?)",
+                (int(ctx.guild.id), int(channel.id)),  # type: ignore[union-attr]
+            )
+            await db.commit()
 
         embed = discord.Embed(
             title="Suggestions channel set",

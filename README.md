@@ -376,9 +376,9 @@ See `another-bot/README.md` and `another-bot/MIGRATION_SUMMARY.md` for setup ins
 ```
 
 Other persisted data (JSON, stored in `data/`):
-- `data/suggestions.json` - Suggestions channel configuration
-- `data/bump_leaderboard.json` - Disboard bump counts + per-server config
 - `data/quotes.json` - Quote dataset for `?quote`
+
+Suggestions config and bump leaderboard data are stored in `botdata.db`.
 
 ---
 
