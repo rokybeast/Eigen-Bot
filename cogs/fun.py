@@ -183,19 +183,43 @@ class Fun(commands.Cog):
     @commands.hybrid_command(name="fridge", help="Send a fridge image")
     async def fridge(self, ctx: commands.Context):
         """Send a fridge image (simple utility)."""
-        fridge_images = [
-            "https://upload.wikimedia.org/wikipedia/commons/4/4e/Refrigerator.jpg",
-            "https://upload.wikimedia.org/wikipedia/commons/0/0c/Refrigerator-open.jpg",
-        ]
+        # Generate an image locally so it always works (no external hotlinking).
+        width, height = 512, 512
+        img = Image.new("RGB", (width, height), (245, 248, 252))
+        draw = ImageDraw.Draw(img)
 
-        url = random.choice(fridge_images)
-        embed = discord.Embed(
-            title="Fridge",
-            color=0x3498DB,
-            timestamp=datetime.now(timezone.utc),
+        # Simple fridge body
+        body_left, body_top = 150, 70
+        body_right, body_bottom = 362, 440
+        draw.rounded_rectangle(
+            (body_left, body_top, body_right, body_bottom),
+            radius=24,
+            fill=(220, 230, 240),
+            outline=(120, 140, 160),
+            width=6,
         )
-        embed.set_image(url=url)
-        await ctx.reply(embed=embed, mention_author=False)
+
+        # Door split
+        split_y = 250
+        draw.line((body_left + 10, split_y, body_right - 10, split_y), fill=(120, 140, 160), width=6)
+
+        # Handles
+        draw.rounded_rectangle((330, 110, 346, 190), radius=8, fill=(120, 140, 160))
+        draw.rounded_rectangle((330, 290, 346, 410), radius=8, fill=(120, 140, 160))
+
+        # Feet
+        draw.rectangle((190, 440, 220, 460), fill=(90, 100, 110))
+        draw.rectangle((292, 440, 322, 460), fill=(90, 100, 110))
+
+        # Export
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+
+        file = discord.File(buf, filename="fridge.png")
+        embed = discord.Embed(title="Fridge", color=0x3498DB, timestamp=datetime.now(timezone.utc))
+        embed.set_image(url="attachment://fridge.png")
+        await ctx.reply(embed=embed, file=file, mention_author=False)
     @commands.hybrid_command(name="compliment", help="Receive a professional programming compliment")
     async def compliment(self, ctx: commands.Context, member: Optional[discord.Member] = None):
         """Give a professional compliment to yourself or another member."""
