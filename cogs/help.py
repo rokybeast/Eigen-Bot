@@ -21,6 +21,8 @@ COG_EMOJIS = {
     "codebuddyquizcog": "",
     "codebuddyhelpcog": "",
     "dailyquestscog": "📋",
+    "suggestions": "",
+    "bumpleaderboard": "",
 }
 
 # Category descriptions
@@ -42,6 +44,8 @@ COG_DESCRIPTIONS = {
     "dailyquestscog": "Complete daily challenges to earn rewards! Solve quizzes, vote, and earn streak freezes & bonus hints",
     "counting": "Counting game with highscores, warnings, and leaderboards",
     "staffapplications": "Staff application panel, review buttons, and admin config",
+    "suggestions": "Submit suggestions with voting reactions + discussion threads",
+    "bumpleaderboard": "Track Disboard /bump activity with leaderboards and stats",
 }
 
 
@@ -81,7 +85,7 @@ class HelpSelect(discord.ui.Select):
         quiz_added = False
         quiz_command_count = 0
         
-        # Cogs to merge into Misc - removed bump since it doesn't exist
+        # Cogs to merge into Misc (kept lightweight)
         merged_into_misc = ['birthday', 'election', 'starboardsystem', 'tags']
         
         # Add options for each loaded cog (use actual cog names from bot.cogs)
@@ -289,7 +293,7 @@ class HelpSelect(discord.ui.Select):
         
         # Handle special Misc category that combines multiple cogs
         if cog_name.lower() == 'misc':
-            merged_cogs = ['misc', 'birthday', 'bump', 'election', 'starboardsystem', 'tags']
+            merged_cogs = ['misc', 'birthday', 'election', 'starboardsystem', 'tags']
             
             embed = discord.Embed(
                 title="Misc Commands",

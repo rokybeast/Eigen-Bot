@@ -1,3 +1,27 @@
+## [2.3.0] - 2026-03-16
+
+### ✨ Added
+- **Disboard Bump Leaderboard**
+  - Tracks Disboard `/bump` activity by listening for Disboard's confirmation message in a configured bump channel
+  - Commands: `/setbumpchannel`, `/bumplb`, `/bumpstats`, `?mybumps` (plus `?blb`, `?bst`, `?topbump`)
+  - Admin adjustments: `/addbumps`, `/removebumps`
+- **Suggestions System**
+  - `/suggest` / `?suggest` posts a suggestion embed in a configured channel
+  - Auto-adds voting reactions (✅ / ❌ / 😐) and creates a discussion thread
+  - Admin config: `/setsuggestchannel`
+- **Fridge Command**
+  - `?fridge` / `/fridge` sends a locally generated image attachment (no external hotlinking)
+
+### 🔄 Changed
+- **Starboard** now includes video attachment URLs in the starboard post content so Discord can render previews/players.
+
+### 🐛 Fixed
+- `?quote` now ships with non-empty data (`data/quotes.json`).
+- `?meme` now returns randomized memes (no longer repeats the same image).
+- Improved hybrid command stability by avoiding crashes on expired interactions (Discord error `10062`).
+
+---
+
 ## [2.2.0] - 2026-03-14
 
 ### ✨ Added

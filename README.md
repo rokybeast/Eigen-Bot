@@ -60,6 +60,7 @@ Highlight the best messages in your community:
 - **Customizable**: Set custom star emoji, adjustable threshold, self-starring toggle
 - **Beautiful Embeds**: Dynamic colors based on star count, author thumbnails, timestamps
 - **Real-time Updates**: Starboard messages update as stars are added/removed
+- **Attachment Support**: Video attachments are linked in the starboard post so Discord can render previews/players
 - **Smart Handling**: Tracks who starred what, prevents duplicates, handles uncached messages
 - **Admin Tools**: `?starboard_cleanup` to remove invalid entries
 
@@ -122,12 +123,14 @@ Entertainment and engagement features:
 - **8-Ball**: `?8ball <question>` - Magic 8-ball responses
 - **Coin Flip**: `?coinflip` - Heads or tails
 - **Dice Roll**: `?roll [size] [count]` - Roll dice
+- **Fridge**: `?fridge` / `/fridge` - Send a fridge image
 
 ### ** Community Engagement**
 Build an active, engaged community:
 - **Random Quotes**: `?quote` - Inspirational programming quotes
-- **Memes**: `?meme` - Programming humor from Reddit
-- **Suggestions**: `?suggest <text>` - Submit feedback and ideas
+- **Memes**: `?meme` - Random programming memes
+- **Suggestions**: `?suggest <text>` / `/suggest <text>` - Posts a suggestion embed, adds vote reactions, and opens a discussion thread
+- **Disboard Bump Leaderboard**: Tracks Disboard `/bump` activity in a configured channel with leaderboards and stats
 
 ### ** Utility Commands**
 Helpful tools for server management:
@@ -146,7 +149,6 @@ Connect with our support team:
 - All reports are sent directly to our support team for review
 
 ### ** AFK System**
-Let people know when you're away:
 - **Set AFK**: `?afk [reason]` - Set your AFK status with an optional reason
 - **Auto-respond**: Bot automatically notifies users when they mention you
 - **Time Tracking**: Shows how long you've been AFK
@@ -331,6 +333,24 @@ QUESTION_CHANNEL_ID=channel_id_for_coding_questions
 ?8ball <question>   - Magic 8-ball
 ?coinflip           - Flip a coin
 ?roll [size] [count] - Roll dice
+?fridge             - Send a fridge image
+```
+
+### **Suggestions Commands**
+```
+/setsuggestchannel #channel  - Set the channel where suggestions are posted (Manage Server)
+/suggest <text>              - Submit a suggestion (posts embed + vote reactions + discussion thread)
+```
+
+### **Bump Leaderboard Commands (Disboard)**
+```
+/setbumpchannel #channel     - Set the bump channel to track Disboard bumps (Manage Server)
+/bumplb                      - Show the bump leaderboard (top 10)
+/bumpstats                   - Show bump totals and most recent bumper
+?mybumps                     - Show your bump stats
+?blb / ?bst / ?topbump       - Prefix aliases
+/addbumps @user <amount>     - Admin: add bumps to a user
+/removebumps @user <amount>  - Admin: remove bumps from a user
 ```
 
 ---
@@ -354,6 +374,11 @@ See `another-bot/README.md` and `another-bot/MIGRATION_SUMMARY.md` for setup ins
 ├── starboard.db      # Starboard system
 └── invites.db        # Invite tracker (if enabled)
 ```
+
+Other persisted data (JSON, stored in `data/`):
+- `data/suggestions.json` - Suggestions channel configuration
+- `data/bump_leaderboard.json` - Disboard bump counts + per-server config
+- `data/quotes.json` - Quote dataset for `?quote`
 
 ---
 
