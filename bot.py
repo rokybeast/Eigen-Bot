@@ -118,32 +118,28 @@ class Fun2OoshBot(commands.Bot):
         # except Exception as e:
         #     logger.error(f'Failed to load cogs.modmail: {e}')
 
-        # Clear any existing commands and force fresh sync
-        if self.config.guild_id:
-            guild = discord.Object(id=self.config.guild_id)
-            logger.info("Clearing existing slash commands for guild...")
-            self.tree.clear_commands(guild=guild)
-            logger.info("Cleared commands, now loading cogs...")
-        else:
-            self.tree.clear_commands(guild=None)
-            logger.info("Cleared global commands, now loading cogs...")
-        
         # Sync slash commands
         try:
-            if self.config.guild_id:
-                guild = discord.Object(id=self.config.guild_id)
-                self.tree.copy_global_to(guild=guild)
-                synced = await self.tree.sync(guild=guild)
-                logger.info(f"✅ Synced {len(synced)} slash commands to guild {self.config.guild_id}")
-                logger.info(f"📊 Guild Command Slots: {len(synced)}/100 used ({100 - len(synced)} remaining)")
+            if self.config.guild_ids:
+                for guild_id in self.config.guild_ids:
+                    guild = discord.Object(id=guild_id)
+                    # Ensure guild command set reflects the current global command set
+                    self.tree.clear_commands(guild=guild)
+                    self.tree.copy_global_to(guild=guild)
+                    synced = await self.tree.sync(guild=guild)
+
+                    logger.info(f"✅ Synced {len(synced)} slash commands to guild {guild_id}")
+                    logger.info(f"📊 Guild Command Slots: {len(synced)}/100 used ({100 - len(synced)} remaining)")
+
+                    command_names = [cmd.name for cmd in synced]
+                    logger.info(f"📝 Synced commands for {guild_id}: {', '.join(command_names)}")
             else:
                 synced = await self.tree.sync()
                 logger.info(f"✅ Synced {len(synced)} slash commands globally")
                 logger.info(f"📊 Global Command Slots: {len(synced)}/100 used ({100 - len(synced)} remaining)")
-            
-            # Log all synced command names
-            command_names = [cmd.name for cmd in synced]
-            logger.info(f"📝 Synced commands: {', '.join(command_names)}")
+
+                command_names = [cmd.name for cmd in synced]
+                logger.info(f"📝 Synced commands: {', '.join(command_names)}")
             
         except Exception as e:
             logger.error(f"❌ Failed to sync slash commands: {e}")
