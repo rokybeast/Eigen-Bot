@@ -28,7 +28,6 @@ class CodeBuddyLeaderboardCog(commands.Cog):
     @app_commands.command(name="codeweek", description="Show the weekly coding leaderboard")
     async def codeweek(self, interaction: discord.Interaction):
         """Display the weekly leaderboard."""
-        start_time = datetime.datetime.now()
         try:
             # Immediate simple response first
             embed = discord.Embed(
@@ -126,7 +125,6 @@ class CodeBuddyLeaderboardCog(commands.Cog):
     @commands.command(name="codeweek", aliases=["cw", "cwlb"])
     async def codeweek_prefix(self, ctx):
         """Display the weekly leaderboard."""
-        start_time = datetime.datetime.now()
         try:
             # Immediate simple response first
             embed = discord.Embed(
@@ -202,7 +200,6 @@ class CodeBuddyLeaderboardCog(commands.Cog):
     @app_commands.command(name="codestreak", description="Show the coding streak leaderboard")
     async def codestreak(self, interaction: discord.Interaction):
         """Display the streak leaderboard."""
-        start_time = datetime.datetime.now()
         try:
             # Immediate simple response first
             embed = discord.Embed(
@@ -307,7 +304,6 @@ class CodeBuddyLeaderboardCog(commands.Cog):
     @commands.command(name="codestreak", aliases=["cs", "cslb"])
     async def codestreak_prefix(self, ctx):
         """Display the streak leaderboard."""
-        start_time = datetime.datetime.now()
         try:
             # Immediate simple response first
             embed = discord.Embed(
