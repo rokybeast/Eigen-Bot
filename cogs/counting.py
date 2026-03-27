@@ -234,6 +234,53 @@ class Counting(commands.Cog):
         except Exception:
             return None
 
+    def _extract_leading_expression(self, text: str) -> Optional[str]:
+        """Extract a safe-eval compatible expression from the start of a message.
+
+        This allows messages like "43 is next" or "6*7 nice" to count as 43/42.
+        Only a leading run of digits/operators/parentheses is considered.
+        """
+        if not text:
+            return None
+
+        # Normalize whitespace/newlines.
+        s = text.replace("\n", " ").strip()
+        if not s:
+            return None
+
+        # Allow common markdown wrappers before the number (e.g. `43`, **43**).
+        s = s.lstrip()
+        while s and s[0] in "`*_~":
+            s = s[1:].lstrip()
+
+        allowed = set("0123456789+-*/^(). ")
+        expr_chars: list[str] = []
+        for ch in s:
+            if ch in allowed:
+                expr_chars.append(ch)
+            else:
+                break
+
+        expr = "".join(expr_chars).strip()
+        return expr or None
+
+    def _parse_count_number(self, message_content: str) -> Optional[int]:
+        expr = self._extract_leading_expression(message_content)
+        if not expr:
+            return None
+
+        number = self.safe_eval(expr)
+        if number is None:
+            return None
+
+        if isinstance(number, float):
+            if number.is_integer():
+                return int(number)
+            return None
+        if isinstance(number, int):
+            return number
+        return None
+
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot or not message.guild:
@@ -266,18 +313,10 @@ class Counting(commands.Cog):
                     if not content:
                         return
 
-                    # Evaluate math expression
-                    number = self.safe_eval(content)
+                    # Evaluate math expression (supports extra trailing text like "43 is next")
+                    number = self._parse_count_number(content)
                     if number is None:
-                        return # Not a valid number/expression
-
-                    # Check if it's an integer
-                    if isinstance(number, float):
-                        if number.is_integer():
-                            number = int(number)
-                        else:
-                            # Not an int, ignore
-                            return
+                        return  # Not a valid number/expression at the start
 
                     # Check rules
                     next_count = current_count + 1
@@ -364,15 +403,9 @@ class Counting(commands.Cog):
         if not content:
             return
 
-        number = self.safe_eval(content)
+        number = self._parse_count_number(content)
         if number is None:
             return
-
-        if isinstance(number, float):
-            if number.is_integer():
-                number = int(number)
-            else:
-                return
 
         await message.channel.send(
             f"{message.author.mention} deleted a number **{number}**.",

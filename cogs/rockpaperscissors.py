@@ -5,6 +5,7 @@ from discord import app_commands
 import asyncio
 import time
 import random
+from typing import Optional, Union
 
 EMOJIS = {
     "rock": "🪨",
@@ -221,7 +222,9 @@ class RockPaperScissorsChallengeView(View):
         self.challenger = challenger
         self.opponent = opponent
         self.cog = cog
-        self.message = message
+        # For slash command flows, the underlying message is an InteractionMessage.
+        # We set it later once the original response is available.
+        self.message: Optional[Union[discord.Message, discord.InteractionMessage]] = message
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.green)
     async def accept_button(self, interaction: discord.Interaction, button: Button):
@@ -236,16 +239,22 @@ class RockPaperScissorsChallengeView(View):
         await interaction.response.defer()
         button.disabled = True
 
+        # If the view was created before we had the original response, fall back to the
+        # message that triggered this component interaction.
+        if self.message is None and interaction.message is not None:
+            self.message = interaction.message
+
         game = RockPaperScissorsGame(self.challenger, self.opponent)
         game_view = RockPaperScissorsView(game, interaction, self.cog)
 
-        if self.message.id in self.cog.challenges:
+        if self.message is not None and self.message.id in self.cog.challenges:
             self.cog.challenges[self.message.id]["accepted"] = True
 
-        await self.message.edit(
-            content=game_view.format_message(),
-            view=game_view
-        )
+        if self.message is not None:
+            await self.message.edit(
+                content=game_view.format_message(),
+                view=game_view
+            )
 
 class RockPaperScissorsCog(commands.Cog):
     def __init__(self, bot):

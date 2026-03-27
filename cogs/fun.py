@@ -13,7 +13,7 @@ import logging
 import time
 import urllib.request
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 from PIL import Image, ImageDraw, ImageFont, ImageSequence
 
 # Professional data sets without emojis
@@ -92,7 +92,7 @@ class Fun(commands.Cog):
             return response.read()
 
     @staticmethod
-    def _load_font(size: int) -> ImageFont.ImageFont:
+    def _load_font(size: int) -> Union[ImageFont.FreeTypeFont, ImageFont.ImageFont]:
         for font_name in ("arialbd.ttf", "Arial Bold.ttf", "DejaVuSans-Bold.ttf"):
             try:
                 return ImageFont.truetype(font_name, size=size)

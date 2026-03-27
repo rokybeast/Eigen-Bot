@@ -1,11 +1,12 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
+from discord.utils import escape_markdown, escape_mentions
 import random
 import re
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Union
 
 TIME_REGEX = re.compile(r"(\d+)([smhdw])")
 TIME_MULTIPLIERS = {
@@ -141,21 +142,24 @@ class UtilityExtra(commands.Cog):
 
     @commands.hybrid_command(name="avatar", help="Get a user's avatar.")
     @app_commands.describe(user="The user to get the avatar of")
-    async def avatar(self, ctx: commands.Context, user: Optional[discord.User] = None):
-        user = user or ctx.author
-        embed = discord.Embed(title=f"{user.display_name}'s Avatar", color=discord.Color.random())
-        embed.set_image(url=user.display_avatar.url)
+    async def avatar(self, ctx: commands.Context, user: Optional[Union[discord.Member, discord.User]] = None):
+        target = user or ctx.author
+        embed = discord.Embed(title=f"{target.display_name}'s Avatar", color=discord.Color.random())
+        embed.set_image(url=target.display_avatar.url)
         await ctx.reply(embed=embed)
 
     @commands.hybrid_command(name="serverinfo", help="Get server info/stats.")
     @commands.guild_only()
     async def serverinfo(self, ctx: commands.Context):
+        if ctx.guild is None:
+            return await ctx.reply("This command can only be used in a server.")
         guild = ctx.guild
         embed = discord.Embed(title=f"Server Info: {guild.name}", color=discord.Color.blue())
         if guild.icon:
             embed.set_thumbnail(url=guild.icon.url)
-        
-        embed.add_field(name="Owner", value=guild.owner.mention, inline=True)
+
+        owner_mention = guild.owner.mention if guild.owner is not None else f"<@{guild.owner_id}>"
+        embed.add_field(name="Owner", value=owner_mention, inline=True)
         embed.add_field(name="ID", value=str(guild.id), inline=True)
         embed.add_field(name="Created At", value=discord.utils.format_dt(guild.created_at, 'R'), inline=True)
         embed.add_field(name="Members", value=str(guild.member_count), inline=True)
@@ -210,6 +214,8 @@ class UtilityExtra(commands.Cog):
             return await ctx.reply("Please provide a pattern to search for.")
 
         pattern = clean_args[0]
+        # Keep a safe-to-display version of the user pattern.
+        safe_pattern = escape_mentions(escape_markdown(pattern))
         limit = 50
         
         if len(clean_args) > 1:
@@ -238,26 +244,30 @@ class UtilityExtra(commands.Cog):
                 matches.append((msg.author.display_name, msg.content, msg.jump_url))
 
         if not matches:
-            return await ctx.reply(f"No matches found for `{pattern}` in the recently checked messages.")
+            return await ctx.reply(
+                f"No matches found for `{safe_pattern}` in the recently checked messages.",
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
 
         results = []
         # fix: d7a4ff1
         for author_name, content, jump_url in matches:
-            clean_content = content.replace('\n', ' ')
+            safe_author_name = escape_mentions(escape_markdown(author_name))
+            clean_content = escape_mentions(escape_markdown(content.replace('\n', ' ')))
             if len(clean_content) > 50:
                 clean_content = clean_content[:50] + '...'
                 
-            line = f"[{author_name}]: {clean_content} ([Jump]({jump_url}))"
+            line = f"[{safe_author_name}]: {clean_content} ([Jump]({jump_url}))"
             results.append(line)
 
-        header = f"Found {len(matches)} matches for `{pattern}`:\n"
+        header = f"Found {len(matches)} matches for `{safe_pattern}`:\n"
         output_body = "\n".join(results)
 
         if len(output_body) > 1900:
             output_body = output_body[:1900] + '\n...(truncated)'
 
         final_output = header + output_body
-        await ctx.reply(final_output)
+        await ctx.reply(final_output, allowed_mentions=discord.AllowedMentions.none())
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(UtilityExtra(bot))

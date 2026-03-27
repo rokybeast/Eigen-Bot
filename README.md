@@ -274,7 +274,11 @@ OWNER_ID=your_discord_user_id
 LOG_LEVEL=INFO
 
 # Development (optional)
-GUILD_ID=your_test_server_id  # For faster slash command sync
+# For faster slash command sync (guild-scoped). You can provide one or many guild IDs.
+# Preferred (multi-guild): comma-separated or JSON list
+GUILD_IDS=1410939321812258928,1263067254153805905
+# Backwards compatible (single guild):
+GUILD_ID=your_test_server_id
 
 # CodeBuddy (optional)
 QUESTION_CHANNEL_ID=channel_id_for_coding_questions

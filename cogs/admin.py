@@ -93,17 +93,29 @@ class Admin(commands.Cog):
     async def sync_commands(self, ctx: commands.Context):
         """Sync slash commands (admin only)."""
         try:
-            if self.config.guild_id:
-                guild = discord.Object(id=self.config.guild_id)
+            # Prefer syncing to the guild where the command was invoked.
+            if ctx.guild is not None:
+                guild_id = ctx.guild.id
+                guild = discord.Object(id=guild_id)
                 self.bot.tree.clear_commands(guild=guild)
                 self.bot.tree.copy_global_to(guild=guild)
                 synced = await self.bot.tree.sync(guild=guild)
                 embed = EmbedBuilder.success_embed(
                     "Commands Synced",
-                    f"Synced {len(synced)} commands to guild {self.config.guild_id}"
+                    f"Synced {len(synced)} commands to this guild ({guild_id})"
+                )
+            elif self.config.guild_ids:
+                for guild_id in self.config.guild_ids:
+                    guild = discord.Object(id=guild_id)
+                    self.bot.tree.clear_commands(guild=guild)
+                    self.bot.tree.copy_global_to(guild=guild)
+                    synced = await self.bot.tree.sync(guild=guild)
+
+                embed = EmbedBuilder.success_embed(
+                    "Commands Synced",
+                    f"Synced commands to {len(self.config.guild_ids)} configured guild(s)."
                 )
             else:
-                self.bot.tree.clear_commands(guild=None)
                 synced = await self.bot.tree.sync()
                 embed = EmbedBuilder.success_embed(
                     "Commands Synced",
@@ -131,17 +143,28 @@ class Admin(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            if self.config.guild_id:
-                guild = discord.Object(id=self.config.guild_id)
+            if interaction.guild_id is not None:
+                guild_id = interaction.guild_id
+                guild = discord.Object(id=guild_id)
                 self.bot.tree.clear_commands(guild=guild)
                 self.bot.tree.copy_global_to(guild=guild)
                 synced = await self.bot.tree.sync(guild=guild)
                 embed = EmbedBuilder.success_embed(
                     "Commands Synced",
-                    f"Synced {len(synced)} commands to guild {self.config.guild_id}"
+                    f"Synced {len(synced)} commands to this guild ({guild_id})"
+                )
+            elif self.config.guild_ids:
+                for guild_id in self.config.guild_ids:
+                    guild = discord.Object(id=guild_id)
+                    self.bot.tree.clear_commands(guild=guild)
+                    self.bot.tree.copy_global_to(guild=guild)
+                    await self.bot.tree.sync(guild=guild)
+
+                embed = EmbedBuilder.success_embed(
+                    "Commands Synced",
+                    f"Synced commands to {len(self.config.guild_ids)} configured guild(s)."
                 )
             else:
-                self.bot.tree.clear_commands(guild=None)
                 synced = await self.bot.tree.sync()
                 embed = EmbedBuilder.success_embed(
                     "Commands Synced",
