@@ -145,7 +145,7 @@ class BumpLeaderboard(commands.Cog):
 
     def _resolve_member_by_name(self, guild: discord.Guild, name: str) -> Optional[discord.Member]:
         """Resolve a guild member by display name / username (best-effort)."""
-        # discord.py helper: matches nick / name / name#discrim.
+        # discord.py helper: matches nick / name / name#discrim..
         try:
             m = guild.get_member_named(name)
             if m is not None:
