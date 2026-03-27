@@ -1,0 +1,23 @@
+# CODEOWNERS
+#
+# Team slugs are case-insensitive on GitHub but typically use lowercase/hyphens.
+# If any team name here doesn't match your actual @TheCodeVerseHub/<team-slug>,
+# update the slug accordingly.
+#
+# Per request: ignoring teams Miku/Web Dev.
+
+# Default owners for everything
+* @TheCodeVerseHub/eigen-maintainers @TheCodeVerseHub/security
+
+# Documentation
+/docs/ @TheCodeVerseHub/documentation
+
+# Bot feature code
+/cogs/ @TheCodeVerseHub/eigen-contributors
+
+# Repo/admin metadata
+/.github/ @TheCodeVerseHub/eigen-maintainers
+
+# General ownership (optional extra teams)
+# / @TheCodeVerseHub/eigen
+# / @TheCodeVerseHub/external-contributors
