@@ -4,14 +4,13 @@ Bump leaderboard cog.
 
 What this does
 -------------
-Counts bumps done via the **Disboard bot** in a configured bump channel.
+Counts bumps done via a **Bump Reminder** embed in a configured bump channel.
 
 Important technical note
 ------------------------
-Discord does not expose *another bot's* slash-command interactions to your bot,
-so we cannot directly "listen to /bump" when Disboard handles it.
-Instead, we listen for Disboard's **confirmation message** (e.g. "Bump done")
-in the bump channel and attribute the bump to the mentioned user.
+Discord does not expose *another bot/app's* slash-command interactions to your bot.
+Instead, we listen for a bump confirmation embed ("Bump Reminder") and attribute
+the bump to the user name stored in the embed title.
 
 Data is stored in the SQLite database (`botdata.db`).
 
@@ -42,11 +41,8 @@ logger = logging.getLogger(__name__)
 DATA_VERSION = 1
 DEFAULT_COOLDOWN_SECONDS = 60  # basic anti-spam; adjust as needed
 
-# Default Disboard bot user id. If your server uses a different bump bot,
-# you can change this constant.
-DISBOARD_BOT_ID = 302050872383242240
-
-_MENTION_RE = re.compile(r"<@!?(\d{15,25})>")
+# Minimal signal to identify a "bump" embed.
+_BUMP_CMD_RE = re.compile(r"\b/bump\b", re.IGNORECASE)
 
 
 def _utcnow() -> datetime:
@@ -103,72 +99,65 @@ class BumpLeaderboard(commands.Cog):
         # In-memory cache to avoid repeatedly parsing ISO strings for cooldown checks.
         self._last_bump_cache: Dict[int, Dict[int, datetime]] = {}
 
-        # Prevent double counting when Disboard edits the same message.
+        # Prevent double counting when the same bump message is edited/reposted.
         self._processed_message_ids: Dict[int, float] = {}
-
-        # Remember who invoked /bump most recently per (guild, channel).
-        # Disboard's confirmation embed often does not mention the user.
-        self._recent_bump_invoker: Dict[Tuple[int, int], Tuple[int, float]] = {}
 
         # Ensure DB tables exist (no JSON migration).
         self.bot.loop.create_task(self.load_data())
 
     # ----------------------------
-    # Disboard message parsing
+    # Bump Reminder embed parsing
     # ----------------------------
 
-    def _is_disboard_message(self, message: discord.Message) -> bool:
-        return message.author is not None and message.author.id == DISBOARD_BOT_ID
+    def _looks_like_bump_reminder_embed(self, embed: discord.Embed) -> bool:
+        """Return True if an embed looks like a bump confirmation."""
+        # The screenshot shows a field like "Command ran: /bump".
+        for f in embed.fields or []:
+            name = (f.name or "").strip()
+            value = (f.value or "").strip()
+            if _BUMP_CMD_RE.search(name) or _BUMP_CMD_RE.search(value):
+                return True
 
-    def _message_text_blob(self, message: discord.Message) -> str:
+        # Fallback: search embed text blob.
         parts: List[str] = []
-        if message.content:
-            parts.append(message.content)
+        if embed.title:
+            parts.append(str(embed.title))
+        if embed.description:
+            parts.append(str(embed.description))
+        for f in embed.fields or []:
+            if f.name:
+                parts.append(str(f.name))
+            if f.value:
+                parts.append(str(f.value))
+        return _BUMP_CMD_RE.search("\n".join(parts) or "") is not None
 
+    def _extract_bumper_name_from_embeds(self, message: discord.Message) -> Optional[str]:
+        """Return bumper username from the bump embed title."""
         for emb in message.embeds or []:
-            if emb.title:
-                parts.append(str(emb.title))
-            if emb.description:
-                parts.append(str(emb.description))
-            for f in emb.fields or []:
-                if f.name:
-                    parts.append(str(f.name))
-                if f.value:
-                    parts.append(str(f.value))
+            if not emb or not emb.title:
+                continue
+            if not self._looks_like_bump_reminder_embed(emb):
+                continue
+            name = str(emb.title).strip()
+            if name:
+                return name
+        return None
 
-        return "\n".join(parts)
-
-    def _looks_like_bump_success(self, message: discord.Message) -> bool:
-        blob = self._message_text_blob(message).lower()
-        # Common Disboard phrases.
-        return (
-            "bump done" in blob
-            or "bumped" in blob and "done" in blob
-            or "successful" in blob and "bump" in blob
-        )
-
-    async def _extract_bumper_user(self, message: discord.Message) -> Optional[discord.abc.User]:
-        # Prefer real resolved mentions.
-        for m in message.mentions or []:
-            if not m.bot:
-                return m
-
-        # Fall back to parsing mention tags in text.
-        blob = self._message_text_blob(message)
-        m = _MENTION_RE.search(blob)
-        if not m:
-            return None
-
-        user_id = int(m.group(1))
-        if message.guild:
-            member = message.guild.get_member(user_id)
-            if member:
-                return member
-
+    def _resolve_member_by_name(self, guild: discord.Guild, name: str) -> Optional[discord.Member]:
+        """Resolve a guild member by display name / username (best-effort)."""
+        # discord.py helper: matches nick / name / name#discrim.
         try:
-            return await self.bot.fetch_user(user_id)
+            m = guild.get_member_named(name)
+            if m is not None:
+                return m
         except Exception:
-            return None
+            pass
+
+        needle = name.casefold()
+        for member in guild.members:
+            if member.display_name.casefold() == needle or member.name.casefold() == needle:
+                return member
+        return None
 
     def _cleanup_processed_cache(self) -> None:
         # Keep ~10 minutes of ids; enough to cover edits/reposts.
@@ -177,62 +166,7 @@ class BumpLeaderboard(commands.Cog):
         for mid in stale:
             self._processed_message_ids.pop(mid, None)
 
-        # Keep ~2 minutes of recent invokers.
-        inv_cutoff = time.monotonic() - 120
-        stale_keys = [k for k, (_, ts) in self._recent_bump_invoker.items() if ts < inv_cutoff]
-        for k in stale_keys:
-            self._recent_bump_invoker.pop(k, None)
-
-    def _record_bump_invocation(self, message: discord.Message) -> None:
-        """Record a visible '/bump' invocation message so we can attribute Disboard's confirmation."""
-        if message.guild is None:
-            return
-
-        # This is the "<user> used /bump" system message shown in Discord.
-        # In discord.py it comes through as MessageType.chat_input_command with a MessageInteraction.
-        if message.type != discord.MessageType.chat_input_command:
-            return
-
-        # discord.py 2.4+: message.interaction_metadata (preferred)
-        # Older versions: message.interaction (deprecated)
-        meta = getattr(message, "interaction_metadata", None)
-        mi = meta if meta is not None else getattr(message, "interaction", None)
-        if mi is None:
-            return
-
-        name = getattr(mi, "name", None)
-        user = getattr(mi, "user", None)
-        if name != "bump" or user is None:
-            return
-
-        # Only store humans.
-        if getattr(user, "bot", False):
-            return
-
-        key = (message.guild.id, message.channel.id)
-        self._recent_bump_invoker[key] = (int(user.id), time.monotonic())
-
-    async def _get_recent_invoker(self, guild: discord.Guild, channel_id: int) -> Optional[discord.abc.User]:
-        key = (guild.id, channel_id)
-        rec = self._recent_bump_invoker.get(key)
-        if not rec:
-            return None
-
-        user_id, ts = rec
-        # Disboard replies quickly; allow a generous window.
-        if time.monotonic() - ts > 45:
-            return None
-
-        m = guild.get_member(user_id)
-        if m:
-            return m
-
-        try:
-            return await self.bot.fetch_user(user_id)
-        except Exception:
-            return None
-
-    async def _handle_possible_disboard_bump(self, message: discord.Message) -> None:
+    async def _handle_possible_bump_reminder_bump(self, message: discord.Message) -> None:
         if message.guild is None:
             return
 
@@ -245,10 +179,13 @@ class BumpLeaderboard(commands.Cog):
         if message.channel.id != int(bump_channel_id):
             return
 
-        if not self._is_disboard_message(message):
+        bumper_name = self._extract_bumper_name_from_embeds(message)
+        if not bumper_name:
             return
 
-        if not self._looks_like_bump_success(message):
+        bumper_member = self._resolve_member_by_name(message.guild, bumper_name)
+        if bumper_member is None:
+            # If we can't resolve the member, do not guess.
             return
 
         # Deduplicate message id (Disboard often edits the same message).
@@ -257,16 +194,19 @@ class BumpLeaderboard(commands.Cog):
             return
         self._processed_message_ids[message.id] = time.monotonic()
 
-        bumper = await self._extract_bumper_user(message)
-        if bumper is None:
-            # Disboard embed often doesn't mention the user; fall back to the
-            # last '/bump' invoker message in the channel.
-            bumper = await self._get_recent_invoker(message.guild, message.channel.id)
-            if bumper is None:
-                return
+        # Count the bump (+1) and thank the user.
+        await self.update_bump_count(
+            message.guild,
+            bumper_member,
+            now=message.created_at or _utcnow(),
+            amount=1,
+            bypass_cooldown=True,
+        )
 
-        # Count the bump. Disboard enforces ~2h cooldown, so we bypass our own.
-        await self.update_bump_count(message.guild, bumper, now=message.created_at or _utcnow(), amount=1, bypass_cooldown=True)
+        try:
+            await message.channel.send(f"Thanks {bumper_member.mention} for bump")
+        except Exception:
+            pass
 
     # ----------------------------
     # Event listeners
@@ -278,22 +218,19 @@ class BumpLeaderboard(commands.Cog):
         if message.author and message.author.id == getattr(self.bot.user, "id", None):
             return
         try:
-            # Track who invoked /bump (system message).
-            self._record_bump_invocation(message)
-            await self._handle_possible_disboard_bump(message)
+            await self._handle_possible_bump_reminder_bump(message)
         except Exception:
-            logger.exception("Failed handling possible Disboard bump message")
+            logger.exception("Failed handling possible bump reminder message")
 
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
-        # Disboard frequently edits the confirmation message; handle edits too.
+        # Some apps may edit the confirmation message; handle edits too.
         if after.author and after.author.id == getattr(self.bot.user, "id", None):
             return
         try:
-            self._record_bump_invocation(after)
-            await self._handle_possible_disboard_bump(after)
+            await self._handle_possible_bump_reminder_bump(after)
         except Exception:
-            logger.exception("Failed handling edited Disboard bump message")
+            logger.exception("Failed handling edited bump reminder message")
 
     # ----------------------------
     # Persistence helpers

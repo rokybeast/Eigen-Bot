@@ -43,7 +43,10 @@ class Fun2OoshBot(commands.Bot):
         super().__init__(
             command_prefix='?',
             intents=intents,
-            help_command=None
+            help_command=None,
+            # SECURITY: Prevent mass-mention exploits caused by echoing user content.
+            # Even if the bot has Administrator / Mention Everyone, this blocks @everyone/@here and role pings.
+            allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True, replied_user=False),
         )
 
         self.start_time = discord.utils.utcnow()

@@ -1,7 +1,8 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from typing import Optional
+from collections.abc import Iterable, Iterator
+from typing import Optional, Union, cast
 
 
 # Emoji mapping for each cog category
@@ -49,17 +50,20 @@ COG_DESCRIPTIONS = {
 }
 
 
-def _flatten_app_commands(cmds: list[app_commands.Command | app_commands.Group]):
+AppCommand = Union[app_commands.Command, app_commands.Group, app_commands.ContextMenu]
+
+
+def _flatten_app_commands(cmds: Iterable[AppCommand]) -> Iterator[AppCommand]:
     """Yield app commands recursively (includes group subcommands)."""
     for cmd in cmds:
         yield cmd
         if isinstance(cmd, app_commands.Group):
-            yield from _flatten_app_commands(list(cmd.commands))
+            yield from _flatten_app_commands(cmd.commands)
 
 
-def _slash_commands_for_cog(bot: commands.Bot, cog: commands.Cog) -> list[app_commands.Command | app_commands.Group]:
+def _slash_commands_for_cog(bot: commands.Bot, cog: commands.Cog) -> list[AppCommand]:
     """Return slash commands bound to the given cog (includes group subcommands)."""
-    bound: list[app_commands.Command | app_commands.Group] = []
+    bound: list[AppCommand] = []
     for cmd in _flatten_app_commands(list(bot.tree.get_commands())):
         if getattr(cmd, "binding", None) is cog:
             bound.append(cmd)
@@ -507,7 +511,7 @@ class HelpCog(commands.Cog):
         view = HelpView(self.bot, interaction.user.id)
         
         # Get the home embed from the select menu
-        select = view.children[0]
+        select = cast(HelpSelect, view.children[0])
         embed = select._create_home_embed()
         
         # Send with the view
@@ -523,7 +527,7 @@ class HelpCog(commands.Cog):
 
         # Create view with dropdown and get the embed from it
         view = HelpView(self.bot, ctx.author.id)
-        select = view.children[0]
+        select = cast(HelpSelect, view.children[0])
         embed = select._create_home_embed()
         
         await ctx.send(embed=embed, view=view)

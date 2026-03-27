@@ -113,6 +113,11 @@ class CodeBuddyQuizCog(commands.Cog):
 
             # Richtige Antwort
             if content == self.current_answer:
+                try:
+                    await message.add_reaction("✅")
+                except Exception:
+                    pass
+
                 points = 2 if self.bonus_active else 1
                 extra_bonus = 0
 
@@ -180,6 +185,11 @@ class CodeBuddyQuizCog(commands.Cog):
             # Falsche Antwort
             else:
                 self.ignored_users.add(user_id)
+
+                try:
+                    await message.add_reaction("❌")
+                except Exception:
+                    pass
                 
                 # Try to use streak freeze first
                 freeze_used = False
