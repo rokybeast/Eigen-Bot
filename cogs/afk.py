@@ -168,7 +168,6 @@ class AFKSystem(commands.Cog):
         # Check if user is already AFK
         was_afk = self.is_afk(ctx.author.id)
         if was_afk:
-            old_info = self.get_afk_info(ctx.author.id)
             action_text = "updated"
         else:
             action_text = "set"

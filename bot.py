@@ -212,13 +212,8 @@ class Fun2OoshBot(commands.Bot):
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Handle slash command errors."""
-        # Silence unknown slash/app commands
-        # app_commands doesn't expose a simple CommandNotFound class in some versions, so be conservative
-        try:
-            from discord import app_commands as _appc
-            # In later versions, AppCommandError subclasses may exist; ignore generic NotFound-like errors
-        except Exception:
-            _appc = None
+        # Silence unknown slash/app commands.
+        # `app_commands` doesn't expose a stable CommandNotFound across versions, so be conservative.
 
         # If it's a cooldown, inform user
         if isinstance(error, app_commands.CommandOnCooldown):

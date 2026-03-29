@@ -192,7 +192,7 @@ class RockPaperScissorsView(View):
                 winner = self.game.players[winner_id]
                 body = f"\n{winner.mention} has **won!**\n\n"
             else:
-                body = f"Draw!\n\n"
+                body = "Draw!\n\n"
             body += f"{self.format_player_line_endgame(0)}\n{self.format_player_line_endgame(1)}"
             if rounds:
                 body += f"\n\n{rounds}"

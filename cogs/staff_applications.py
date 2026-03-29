@@ -487,10 +487,6 @@ class StaffApplications(commands.Cog):
                 # But to make it work, I need to respond.
                 # If the view was attached via `add_view`, it handles it. If not, this global listener does.
                 
-                parts = custom_id.split(':')
-                action = parts[1]
-                user_id = int(parts[2])
-                
                 # We need to recreate the modal logic here manually since the View instance is lost
                 # But `send_modal` needs a Modal instance.
                 # Checking if the interaction was already handled (if View was attached)?

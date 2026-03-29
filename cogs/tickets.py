@@ -180,7 +180,7 @@ class Tickets(commands.Cog):
                     
                     # Fetch the message to ensure it exists
                     try:
-                        message = await channel.fetch_message(message_id)
+                        await channel.fetch_message(message_id)
                         # Create and attach the persistent view
                         view = TicketPanelView(self)
                         # The view is automatically registered due to persistent custom_id
@@ -1090,9 +1090,9 @@ class Tickets(commands.Cog):
                 embed.add_field(
                     name="ℹ️ Information", 
                     value="Ticket actions (create, close, claim) will be logged to this channel.\n\n"
-                          f"• **Change it:** `/ticketlog #new-channel`\n"
-                          f"• **Disable custom:** `/ticketlog-disable`\n"
-                          f"• **Quick disable:** Rename this channel",
+                          "• **Change it:** `/ticketlog #new-channel`\n"
+                          "• **Disable custom:** `/ticketlog-disable`\n"
+                          "• **Quick disable:** Rename this channel",
                     inline=False
                 )
             else:
@@ -1265,10 +1265,10 @@ class Tickets(commands.Cog):
                 )
                 embed.add_field(
                     name="ℹ️ Information", 
-                    value=f"This role will be pinged when new tickets are created.\n\n"
-                          f"• **Change it:** `/ticketsupport @new-role`\n"
-                          f"• **Remove it:** `/ticketsupport-disable`\n"
-                          f"• **Set via panel:** `/ticketpanel #channel @role`",
+                      value="This role will be pinged when new tickets are created.\n\n"
+                          "• **Change it:** `/ticketsupport @new-role`\n"
+                          "• **Remove it:** `/ticketsupport-disable`\n"
+                          "• **Set via panel:** `/ticketpanel #channel @role`",
                     inline=False
                 )
             else:
@@ -1670,10 +1670,10 @@ class Tickets(commands.Cog):
                 )
                 embed.add_field(
                     name="ℹ️ Information", 
-                    value=f"This role will be pinged when report tickets are created.\n\n"
-                          f"• **Change it:** `/ticketreport @new-role`\n"
-                          f"• **Remove it:** `/ticketreport-disable`\n"
-                          f"• **Set via panel:** `/ticketpanel report_role:@role`",
+                      value="This role will be pinged when report tickets are created.\n\n"
+                          "• **Change it:** `/ticketreport @new-role`\n"
+                          "• **Remove it:** `/ticketreport-disable`\n"
+                          "• **Set via panel:** `/ticketpanel report_role:@role`",
                     inline=False
                 )
             else:
@@ -1809,10 +1809,10 @@ class Tickets(commands.Cog):
                 )
                 embed.add_field(
                     name="ℹ️ Information", 
-                    value=f"This role will be pinged when partnership tickets are created.\n\n"
-                          f"• **Change it:** `/ticketpartner @new-role`\n"
-                          f"• **Remove it:** `/ticketpartner-disable`\n"
-                          f"• **Set via panel:** `/ticketpanel partner_role:@role`",
+                      value="This role will be pinged when partnership tickets are created.\n\n"
+                          "• **Change it:** `/ticketpartner @new-role`\n"
+                          "• **Remove it:** `/ticketpartner-disable`\n"
+                          "• **Set via panel:** `/ticketpanel partner_role:@role`",
                     inline=False
                 )
             else:

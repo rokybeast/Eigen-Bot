@@ -284,7 +284,7 @@ class StarboardSystem(commands.Cog):
         
         embed = create_success_embed(
             " Starboard Setup Complete!",
-            f"Your modern starboard system is now active and ready to showcase your community's best messages!"
+            "Your modern starboard system is now active and ready to showcase your community's best messages!"
         )
         embed.color = 0x00FF7F  # Spring green
         embed.add_field(name=" Channel", value=channel.mention, inline=True)
@@ -465,7 +465,7 @@ class StarboardSystem(commands.Cog):
             
         embed = discord.Embed(
             title="⭐ Starboard Statistics",
-            description=f"Here's how your server is shining!",
+            description="Here's how your server is shining!",
             color=color
         )
         
@@ -916,7 +916,7 @@ class StarboardSystem(commands.Cog):
             async with aiosqlite.connect(self.database_path) as db:
                 await db.execute("DELETE FROM starred_messages WHERE starboard_message_id = ?", (starboard_msg_id,))
                 await db.commit()
-        except Exception as e:
+        except Exception:
             self.logger.exception(f"Error updating starboard message {starboard_msg_id} for original {message.id}")
             
     async def remove_starboard_message(self, starboard_msg_id: int, settings: Dict):
@@ -930,7 +930,7 @@ class StarboardSystem(commands.Cog):
             await starboard_msg.delete()
         except discord.NotFound:
             pass  # Already deleted
-        except Exception as e:
+        except Exception:
             self.logger.exception(f"Error removing starboard message {starboard_msg_id}")
             
     async def create_starboard_embed(self, message: discord.Message, star_count: int, settings: Dict) -> discord.Embed:
@@ -952,7 +952,8 @@ class StarboardSystem(commands.Cog):
             content = content[:1500] + "..."
 
         # Highlight the message by using a block quote style in the description
-        description = f"> {content.replace('\n', '\n> ')}"
+        quoted_content = content.replace("\n", "\n> ")
+        description = f"> {quoted_content}"
 
         embed = discord.Embed(
             description=description,

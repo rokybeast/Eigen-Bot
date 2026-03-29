@@ -85,8 +85,6 @@ class HelpSelect(discord.ui.Select):
             )
         ]
         
-        # Track if we've added the Quiz category
-        quiz_added = False
         quiz_command_count = 0
         
         # Cogs to merge into Misc (kept lightweight)
@@ -292,7 +290,7 @@ class HelpSelect(discord.ui.Select):
             else:
                 embed.description = "No commands available in this category."
             
-            embed.set_footer(text=f"Use ?helpmenu <command> for detailed help")
+            embed.set_footer(text="Use ?helpmenu <command> for detailed help")
             return embed
         
         # Handle special Misc category that combines multiple cogs
@@ -365,7 +363,7 @@ class HelpSelect(discord.ui.Select):
             else:
                 embed.description = "No commands available in this category."
             
-            embed.set_footer(text=f"Use ?helpmenu <command> for detailed help")
+            embed.set_footer(text="Use ?helpmenu <command> for detailed help")
             return embed
         
         # Find the cog (case-insensitive)
@@ -452,7 +450,7 @@ class HelpSelect(discord.ui.Select):
         else:
             embed.description = "No commands available in this category."
         
-        embed.set_footer(text=f"Use ?helpmenu <command> for detailed help")
+        embed.set_footer(text="Use ?helpmenu <command> for detailed help")
         return embed
 
 

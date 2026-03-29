@@ -445,8 +445,6 @@ async def increment_quest_quiz_count(user_id: int):
     Increment the quiz count for today's quest.
     Returns True if quest was completed with this quiz.
     """
-    today = datetime.date.today()
-    
     async with aiosqlite.connect(DB_PATH) as db:
         # Get current progress
         progress = await get_daily_quest_progress(user_id)
@@ -481,8 +479,6 @@ async def mark_quest_voted(user_id: int):
     Mark that the user has voted today.
     Returns True if quest was completed with this vote.
     """
-    today = datetime.date.today()
-    
     async with aiosqlite.connect(DB_PATH) as db:
         # Get current progress
         progress = await get_daily_quest_progress(user_id)

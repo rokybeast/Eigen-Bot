@@ -351,9 +351,7 @@ class Misc(commands.Cog):
         """Report a bug to the support server."""
         # Support server channel ID
         SUPPORT_CHANNEL_ID = 1452739906525728828
-        
-        # Get interaction for hybrid command
-        interaction = ctx.interaction or ctx
+
         user = ctx.author
         guild = ctx.guild
         

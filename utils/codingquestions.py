@@ -18,7 +18,7 @@ _index = 0
 
 def get_random_question():
     """Returns a non repeating randomized question"""
-    global _index, _question_pool
+    global _index
 
     if _index >= len(_question_pool):
         random.shuffle(_question_pool)
@@ -27,6 +27,8 @@ def get_random_question():
     q = copy.deepcopy(_question_pool[_index])
     _index += 1
     return fix_question(q)
+
+
 
 def fix_question(question):
     """Randomizes options while keeping the correct answer accurate."""
