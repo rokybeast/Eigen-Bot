@@ -1,0 +1,82 @@
+name: Good first issue
+description: Create a beginner-friendly task for new contributors
+title: "[Good First Issue]: "
+labels:
+  - good first issue
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to create a well-scoped, beginner-friendly issue.
+
+        Tips:
+        - Keep the scope small (1 PR).
+        - Add links to relevant files/lines or existing issues.
+        - Include clear acceptance criteria.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing what needs to be done.
+      placeholder: Add a missing command to the help output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why is this needed? Link related issues/PRs or docs.
+      placeholder: |
+        - Related issue(s): #
+        - Relevant docs/notes:
+    validations:
+      required: false
+
+  - type: textarea
+    id: suggested-approach
+    attributes:
+      label: Suggested approach
+      description: A simple step-by-step approach a new contributor can follow.
+      placeholder: |
+        1. Locate ...
+        2. Update ...
+        3. Add/adjust ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: What must be true for this issue to be considered done?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: files-to-look-at
+    attributes:
+      label: Files / areas to look at
+      description: Point to where the change likely needs to happen.
+      placeholder: |
+        - cogs/...
+        - utils/...
+        - docs/...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: readiness
+    attributes:
+      label: Checklist
+      options:
+        - label: The scope is small enough for a first contribution.
+          required: true
+        - label: Acceptance criteria are clear and testable.
+          required: true
+        - label: Relevant pointers/links are included.
+          required: false
