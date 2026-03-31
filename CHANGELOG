@@ -105,13 +105,14 @@
 
 ## Previous Changelog
 
-bot.Py
-/utils/codingquestions.py
-/cogs/afk.py
-/cogs/bump.py
-/cogs/codebuddy_help.py
-/cogs/codebuddy_leaderboard.py
-/cogs/codebuddy_quiz.py
-/cogs/misc.py
-/cogs/rules.py
-/cogs/utility_extras.py
+Files updated in earlier versions:
+- bot.py
+- utils/codingquestions.py
+- cogs/afk.py
+- cogs/bump.py
+- cogs/codebuddy_help.py
+- cogs/codebuddy_leaderboard.py
+- cogs/codebuddy_quiz.py
+- cogs/misc.py
+- cogs/rules.py
+- cogs/utility_extras.py

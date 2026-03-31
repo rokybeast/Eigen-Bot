@@ -25,7 +25,7 @@ Eigen Bot supports **hybrid commands** - both prefix and slash commands:
   - Auto-complete and built-in Discord UI
   - Limited to essential commands to stay within Discord's 100 command limit
 
-** Tip**: Use `?helpmenu` or `/help` to explore all available commands!
+**Tip:** Use `?helpmenu` or `/help` to explore all available commands!
 
 ---
 
@@ -456,7 +456,7 @@ Special thanks to the discord.py community and all contributors!
 
 [GitHub](https://github.com/youngcoder45/Eigen-bot-In-Python) • [Issues](https://github.com/youngcoder45/Eigen-bot-In-Python/issues)
 
-Made with for Discord communities
+Made with ❤️ for Discord communities
 
 </div>
 

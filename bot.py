@@ -30,7 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class Fun2OoshBot(commands.Bot):
-    """Main bot class for fun2oosh."""
+    """Main bot class for Eigen Bot."""
 
     def __init__(self, config: Config):
         intents = discord.Intents.default()

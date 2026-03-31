@@ -46,13 +46,13 @@ class StarboardSystem(commands.Cog):
                 "• Self-starring allowed by default\n"
                 "• Real-time updates as more stars are added\n\n"
                 " **Quick Setup:**\n"
-                "`f?starboard setup #starboard 3 ⭐`\n\n"
+                "`?starboard setup #starboard 3 ⭐`\n\n"
                 " **Management Commands:**\n"
-                "• `f?starboard channel #channel` - Change starboard channel\n"
-                "• `f?starboard threshold 5` - Change star requirement\n"
-                "• `f?starboard emoji ` - Change star emoji\n"
-                "• `f?starboard stats` - View server statistics\n"
-                "• `f?starboard toggle` - Enable/disable system\n"
+                "• `?starboard channel #channel` - Change starboard channel\n"
+                "• `?starboard threshold 5` - Change star requirement\n"
+                "• `?starboard emoji ` - Change star emoji\n"
+                "• `?starboard stats` - View server statistics\n"
+                "• `?starboard toggle` - Enable/disable system\n"
             ),
             color=0xFFD700  # Gold color
         )
@@ -67,7 +67,7 @@ class StarboardSystem(commands.Cog):
             ),
             inline=False
         )
-        embed.set_footer(text="fun2oosh Bot • Modern Discord Experience", icon_url=ctx.author.display_avatar.url)
+        embed.set_footer(text="Eigen Bot • Modern Discord Experience", icon_url=ctx.author.display_avatar.url)
         await ctx.send(embed=embed)
     """Starboard system for highlighting popular messages with star reactions"""
     
@@ -295,7 +295,7 @@ class StarboardSystem(commands.Cog):
         embed.add_field(name=" Features", value="Dynamic colors, thumbnails, smart formatting", inline=True)
         embed.add_field(
             name=" Next Steps",
-            value=f"Start starring messages with {emoji} reactions!\nUse `f?starboard stats` to track activity.",
+            value=f"Start starring messages with {emoji} reactions!\nUse `?starboard stats` to track activity.",
             inline=False
         )
         embed.set_footer(text=" Your starboard will get more beautiful as messages get more stars!")
@@ -411,7 +411,7 @@ class StarboardSystem(commands.Cog):
         if not settings:
             await ctx.send(embed=create_error_embed(
                 "Starboard Not Setup",
-                "Please run `f?starboard setup` first to configure the starboard system."
+                "Please run `?starboard setup` first to configure the starboard system."
             ))
             return
             
