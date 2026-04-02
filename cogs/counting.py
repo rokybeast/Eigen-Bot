@@ -140,27 +140,26 @@ class Counting(commands.Cog):
         new_count: int,
         previous_high_score: int,
     ) -> None:
-        """Add ✅+🏆 to the message and keep only one active highscore marker per guild."""
+        """Add ✅+🏆 to the message.
+
+        Note: Reactions, once added by the bot, should never be removed.
+        """
         if not message.guild or not isinstance(message.channel, discord.TextChannel):
             return
 
         guild_id = message.guild.id
         channel = message.channel
 
-        previous_marker = await self._get_active_highscore_message_id(guild_id)
-        if previous_marker and previous_marker != message.id:
-            await self._remove_bot_reactions(channel, previous_marker)
-
-        # Ensure reactions exist (✅ may already be there)
-        try:
-            await message.add_reaction("✅")
-        except Exception:
-            pass
+        # Only add the trophy here.
+        # The ✅ reaction is added for all valid counts in the main handler;
+        # adding it again here causes extra API calls and rate limits.
         try:
             await message.add_reaction("🏆")
         except Exception:
             pass
 
+        # Track the latest highscore/tie message ID for bookkeeping.
+        # (We no longer remove reactions from older messages.)
         await self._set_active_highscore_message_id(guild_id, message.id)
 
         # Record history only if it is a NEW record
@@ -178,24 +177,48 @@ class Counting(commands.Cog):
     async def _clear_highscore_marker_if_any(self, guild_id: int, channel: discord.TextChannel) -> None:
         marker_id = await self._get_active_highscore_message_id(guild_id)
         if marker_id:
-            await self._remove_bot_reactions(channel, marker_id)
             await self._set_active_highscore_message_id(guild_id, None)
 
     @app_commands.command(name="setcountingchannel", description="Set the channel for the counting game")
     @app_commands.checks.has_permissions(administrator=True)
     async def setcountingchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
-            await db.execute("""
-                INSERT INTO counting_config (guild_id, channel_id)
-                VALUES (?, ?)
-                ON CONFLICT(guild_id) DO UPDATE SET channel_id = excluded.channel_id
-            """, (interaction.guild_id, channel.id))
-            await db.commit()
-        
+        # Slash command interactions must be acknowledged quickly.
+        # DB operations can take >3s (locks, slow disks), so defer immediately.
+        if interaction.response.is_done():
+            # Extremely defensive; normally false here.
+            pass
+        else:
+            await interaction.response.defer(ephemeral=True)
+
+        if interaction.guild_id is None:
+            await interaction.followup.send("This command can only be used in a server.", ephemeral=True)
+            return
+
+        retries = 3
+        while retries > 0:
+            try:
+                async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+                    await db.execute(
+                        """
+                        INSERT INTO counting_config (guild_id, channel_id)
+                        VALUES (?, ?)
+                        ON CONFLICT(guild_id) DO UPDATE SET channel_id = excluded.channel_id
+                        """,
+                        (interaction.guild_id, channel.id),
+                    )
+                    await db.commit()
+                break
+            except aiosqlite.OperationalError as e:
+                if "locked" in str(e).lower():
+                    retries -= 1
+                    await asyncio.sleep(0.5)
+                    continue
+                raise
+
         # Update cache
         self.counting_channels[interaction.guild_id] = channel.id
-        
-        await interaction.response.send_message(f"Counting channel set to {channel.mention}", ephemeral=True)
+
+        await interaction.followup.send(f"Counting channel set to {channel.mention}", ephemeral=True)
 
     def safe_eval(self, expr):
         operators = {
