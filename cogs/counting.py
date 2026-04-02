@@ -15,9 +15,47 @@ class Counting(commands.Cog):
         self.bot = bot
         # Cache for counting channels: guild_id -> channel_id
         self.counting_channels = {}
+        # Protect against occasional duplicate MESSAGE_CREATE dispatches or accidental double-processing.
+        # Key: message_id, Value: monotonic timestamp
+        self._recent_message_ids: dict[int, float] = {}
+        # Throttle reaction API calls to avoid Discord rate limits in fast counting channels.
+        self._reaction_queue: asyncio.Queue[tuple[discord.Message, str]] = asyncio.Queue()
+        self._pending_reactions: set[tuple[int, str]] = set()
+        self._reaction_worker_task: Optional[asyncio.Task[None]] = None
+
+    async def cog_unload(self) -> None:
+        if self._reaction_worker_task and not self._reaction_worker_task.done():
+            self._reaction_worker_task.cancel()
+
+    async def _reaction_worker(self) -> None:
+        # A small delay between reaction requests keeps us under the common reaction route limits.
+        # Reactions may appear slightly delayed, but they will still be added.
+        while True:
+            message, emoji = await self._reaction_queue.get()
+            try:
+                try:
+                    await message.add_reaction(emoji)
+                except Exception:
+                    pass
+                await asyncio.sleep(0.35)
+            finally:
+                self._pending_reactions.discard((message.id, emoji))
+                self._reaction_queue.task_done()
+
+    def _enqueue_reaction(self, message: discord.Message, emoji: str) -> None:
+        key = (message.id, emoji)
+        if key in self._pending_reactions:
+            return
+        self._pending_reactions.add(key)
+        try:
+            self._reaction_queue.put_nowait((message, emoji))
+        except Exception:
+            self._pending_reactions.discard(key)
 
     async def cog_load(self):
         """Load counting channels into memory on startup"""
+        if self._reaction_worker_task is None or self._reaction_worker_task.done():
+            self._reaction_worker_task = asyncio.create_task(self._reaction_worker())
         try:
             async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
                 # Ensure auxiliary tables exist
@@ -153,10 +191,7 @@ class Counting(commands.Cog):
         # Only add the trophy here.
         # The ✅ reaction is added for all valid counts in the main handler;
         # adding it again here causes extra API calls and rate limits.
-        try:
-            await message.add_reaction("🏆")
-        except Exception:
-            pass
+        self._enqueue_reaction(message, "🏆")
 
         # Track the latest highscore/tie message ID for bookkeeping.
         # (We no longer remove reactions from older messages.)
@@ -316,6 +351,17 @@ class Counting(commands.Cog):
         if message.channel.id != self.counting_channels[message.guild.id]:
             return
 
+        # Deduplicate processing of the same message ID within this process.
+        # This prevents duplicate warnings/messages if Discord or the bot dispatches the event twice.
+        now = time.monotonic()
+        last_seen = self._recent_message_ids.get(message.id)
+        if last_seen is not None and (now - last_seen) < 30:
+            return
+        self._recent_message_ids[message.id] = now
+        if len(self._recent_message_ids) > 5000:
+            cutoff = now - 120
+            self._recent_message_ids = {mid: ts for mid, ts in self._recent_message_ids.items() if ts >= cutoff}
+
         # 2. Process the message logic
         # Wrap DB operations in retry loop for robustness
         retries = 3
@@ -350,18 +396,28 @@ class Counting(commands.Cog):
 
                     if message.author.id == last_user_id:
                         # Warn instead of instant ruin. 3 warnings ruins the count.
-                        warnings = await self._get_warning_count(message.guild.id, message.author.id)
-                        warnings += 1
-                        await self._set_warning_count(message.guild.id, message.author.id, warnings)
-
-                        try:
-                            await message.add_reaction("⚠️")
-                        except Exception:
-                            pass
+                        # Use an atomic increment in the SAME connection to avoid races and DB-lock retries.
+                        await db.execute(
+                            """
+                            INSERT INTO counting_warnings (guild_id, user_id, warnings)
+                            VALUES (?, ?, 1)
+                            ON CONFLICT(guild_id, user_id) DO UPDATE SET warnings = warnings + 1
+                            """,
+                            (message.guild.id, message.author.id),
+                        )
+                        async with db.execute(
+                            "SELECT warnings FROM counting_warnings WHERE guild_id = ? AND user_id = ?",
+                            (message.guild.id, message.author.id),
+                        ) as cursor:
+                            row = await cursor.fetchone()
+                        warnings = int(row[0]) if row else 1
+                        await db.commit()
 
                         if warnings >= 3:
                             await self.fail_count(message, current_count, "Too many warnings (counted twice in a row 3 times)!")
                             return
+
+                        self._enqueue_reaction(message, "⚠️")
 
                         await message.channel.send(
                             f"You can't count twice in a row, {message.author.mention}. "
@@ -371,7 +427,6 @@ class Counting(commands.Cog):
                         return
 
                     # Valid count - Update DB
-                    await message.add_reaction("✅")
                     new_high_score = max(high_score, next_count)
                     
                     # Update configuration tables
@@ -387,11 +442,17 @@ class Counting(commands.Cog):
                         VALUES (?, ?, 1, 0)
                         ON CONFLICT(user_id, guild_id) DO UPDATE SET total_counts = total_counts + 1
                     """, (message.author.id, message.guild.id))
+
+                    # Reset warnings for this user on a valid count (in the same transaction).
+                    await db.execute(
+                        "DELETE FROM counting_warnings WHERE guild_id = ? AND user_id = ?",
+                        (message.guild.id, message.author.id),
+                    )
                     
                     await db.commit()
 
-                    # Reset warnings for this user on a valid count
-                    await self._set_warning_count(message.guild.id, message.author.id, 0)
+                    # Side effects after commit to avoid duplicate reactions on retries.
+                    self._enqueue_reaction(message, "✅")
 
                     # Highscore marker: react ✅+🏆 when reaching/topping the record
                     if next_count >= high_score:
