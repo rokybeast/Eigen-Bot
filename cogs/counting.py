@@ -648,6 +648,19 @@ class Counting(commands.Cog):
             f"Your saves: **{new_user_units/10:.1f}** • Server saves: **{new_guild_units/10:.1f}**"
         )
 
+
+    @commands.command(name="guildsaves", aliases=["gsaves", "serversaves", "ssaves"])
+    async def guild_saves(self, ctx: commands.Context):
+        """Show the server save pool used to protect counting mistakes."""
+        if not ctx.guild:
+            return await ctx.send("Server only command.")
+
+        units = await get_guild_save_units(ctx.guild.id)
+        await ctx.send(
+            f"Server saves: **{units/10:.1f}**\n"
+            "(Needs **1.0** server save to protect a ruined count.)"
+        )
+
     @commands.hybrid_command(name="highscoretable", aliases=["highscores"], help="Show recent counting highscores")
     async def highscore_table(self, ctx: commands.Context):
         if not ctx.guild:
