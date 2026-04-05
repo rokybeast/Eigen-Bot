@@ -95,24 +95,23 @@ Complete daily challenges to earn powerful rewards! Inspired by popular quest sy
 **Features:**
 - **Daily Checklist**: Reset every 24 hours with fresh challenges
 - **Quest Tasks**:
-  - Solve 5 Basic CodeBuddy Quizzes
-  - Vote for the Bot on top.gg (coming soon!)
+   - Answer 5 CodeBuddy quiz questions
+   - Count 5 valid numbers in the counting channel
 - **Rewards**:
-  - **Streak Freezes**: Automatically protect your quiz streak when you answer wrong
-  - **Bonus Hints**: Use hints to eliminate wrong answers (ephemeral messages)
+   - **Streak Freezes**: Protect your quiz streak when you answer wrong (consumes 1.0)
+   - **Saves**: Protect the counting game when you ruin the count (consumes 1.0)
 - **Progress Tracking**: Monitor your daily quest completion in real-time
 
 **Commands:**
 - `?dailyquest` / `?dq` / `?quests` - View daily quest progress
 - `/dailyquest` - View quest progress (slash command)
-- `?bonushint` / `?hint` - Use a bonus hint on active quiz
-- `?inventory` / `?inv` - Check your streak freezes and bonus hints
+- `?inventory` / `?inv` - Check your streak freezes and saves
 
 **How It Works:**
-1. Complete 5 quiz questions correctly
-2. Vote for the bot (when available)
-3. Earn 1 Streak Freeze + 1 Bonus Hint
-4. Use rewards strategically to maintain your streak and climb leaderboards!
+1. Complete either quest (Quiz or Counting)
+2. Each quest completion awards **0.2** streak-freeze + **0.5** save
+3. Inventory caps: max **2.0** streak-freezes and **4.0** saves
+4. Use rewards strategically to maintain your streak and protect counting!
 
 ### ** Fun Commands**
 Entertainment and engagement features:
@@ -165,9 +164,12 @@ Celebrate community birthdays:
 Run a server counting game with anti-grief protections and highscores:
 - **Set Channel**: `/setcountingchannel <channel>` - Admin-only, choose the counting channel
 - **Double-count Warnings**: Counting twice in a row gives `⚠️` warnings (3 warnings triggers a fail)
+- **Save Protection**: If someone posts the wrong number, the bot tries to consume a **personal save** first, then a **server save**; otherwise the count resets to 0
 - **Deleted Number Logging**: If a valid counting number is deleted, the bot announces who deleted it
 - **Highscore Marker**: When the server reaches/ties the highscore, the message is marked with ✅ + 🏆 until the count is ruined
 - **Highscore Table**: `?highscoretable` / `/highscoretable` (and `?highscores`) - View recent highscore history
+- **Donate Saves to Server Pool**: `?donateguild` / `?dg` - Donate **1.0** personal save; server gains **0.5** save
+- **View Server Save Pool**: `?guildsaves` - Show current server saves (needs **1.0** to protect a ruined count)
 
 ### ** Staff Applications**
 Collect staff applications via DMs and review them in a configurable channel:
