@@ -133,8 +133,14 @@ class CodeBuddyQuizCog(commands.Cog):
                         # Notify user about quest completion
                         try:
                             quest_embed = discord.Embed(
-                                title="Daily Quest Completed!",
-                                description=f"{message.author.mention} You completed your daily quest!\n\n**Rewards Earned:**\n• 1 Streak Freeze\n• 1 Bonus Hint\n\nUse `?inventory` to check your rewards!",
+                                title="Quest Completed!",
+                                description=(
+                                    f"{message.author.mention} You completed the **Quiz** quest!\n\n"
+                                    "**Rewards Earned:**\n"
+                                    "• **0.2** Streak Freeze\n"
+                                    "• **0.5** Save\n\n"
+                                    "Use `?inventory` to check your items!"
+                                ),
                                 color=0x000000
                             )
                             await message.channel.send(embed=quest_embed)

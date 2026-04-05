@@ -3,9 +3,16 @@ from discord.ext import commands
 from discord import app_commands
 import aiosqlite
 from utils.codebuddy_database import DB_PATH
+from utils.codebuddy_database import (
+    add_guild_save_units,
+    get_guild_save_units,
+    get_user_save_units,
+    increment_quest_counting_count,
+    try_use_guild_save,
+    try_use_user_save,
+)
 import ast
 import operator
-import random
 import asyncio
 import time
 from typing import Optional
@@ -454,6 +461,19 @@ class Counting(commands.Cog):
                     # Side effects after commit to avoid duplicate reactions on retries.
                     self._enqueue_reaction(message, "✅")
 
+                    # Daily quest progress: count 5 numbers (best-effort).
+                    try:
+                        quest_completed = await increment_quest_counting_count(message.author.id)
+                        if quest_completed:
+                            await message.channel.send(
+                                f"Daily quest completed, {message.author.mention}! "
+                                "You earned **0.2** Streak Freeze and **0.5** Save. "
+                                "Use `?inventory` to check your items.",
+                                delete_after=15,
+                            )
+                    except Exception:
+                        pass
+
                     # Highscore marker: react ✅+🏆 when reaching/topping the record
                     if next_count >= high_score:
                         await self._mark_highscore_message(message, next_count, high_score)
@@ -497,136 +517,136 @@ class Counting(commands.Cog):
         )
 
     async def fail_count(self, message, current_count, reason):
-        # 1. Send initial message
-        await message.add_reaction("❌")
-        status_msg = await message.channel.send(
-            f"{reason} {message.author.mention} messed up at {current_count}!\n"
-            "🎲 **Rolling the Dice of Fate...**\n"
-            "React with 🎲 to help roll! (Need 2 reactions in 60s)"
-        )
-        await status_msg.add_reaction("🎲")
+        # Replace dice mechanic with save mechanic:
+        # 1) Use a personal save if available.
+        # 2) Else use a guild save if available.
+        # 3) Else the count is ruined (reset to 0).
 
-        # 2. Wait for reactions
-        reactions_collected = False
         try:
-            end_time = asyncio.get_event_loop().time() + 60
-            while True:
-                # Check current count
-                status_msg = await message.channel.fetch_message(status_msg.id)
-                reaction = discord.utils.get(status_msg.reactions, emoji="🎲")
-                
-                # If bot reacted, count is at least 1. We need 2 total.
-                if reaction and reaction.count >= 2:
-                    reactions_collected = True
-                    break
-                
-                timeout = end_time - asyncio.get_event_loop().time()
-                if timeout <= 0:
-                    break
-                
-                try:
-                    # Wait for any reaction on this message
-                    await self.bot.wait_for(
-                        'reaction_add', 
-                        check=lambda r, u: r.message.id == status_msg.id and str(r.emoji) == "🎲", 
-                        timeout=timeout
-                    )
-                except asyncio.TimeoutError:
-                    break
+            await message.add_reaction("❌")
         except Exception:
-            pass # Proceed if something fails
+            pass
 
-        # 3. Determine Outcome
-        outcome_msg = ""
-        new_count = 0
-        new_last_user_id = None
-        
-        dice_db_ops = [] # List of DB operations to perform (query, args)
+        if not message.guild:
+            return
 
-        if not reactions_collected:
-            # TIMEOUT / NOT ENOUGH REACTIONS -> RESET
-            new_count = 0
-            new_last_user_id = None
-            outcome_msg = "⏳ **Time's up!** Not enough people helped roll the dice.\n💥 **Reset!** The count goes back to 0."
-            
-            dice_db_ops.append(("""
-                UPDATE counting_config 
+        guild_id = message.guild.id
+        user_id = message.author.id
+
+        # Clear this user's warnings so a saved mistake doesn't soft-lock them.
+        try:
+            await self._set_warning_count(guild_id, user_id, 0)
+        except Exception:
+            pass
+
+        used_personal = False
+        used_guild = False
+        try:
+            used_personal = await try_use_user_save(user_id)
+        except Exception:
+            used_personal = False
+
+        if not used_personal:
+            try:
+                used_guild = await try_use_guild_save(guild_id)
+            except Exception:
+                used_guild = False
+
+        if used_personal or used_guild:
+            try:
+                remaining_user_units = await get_user_save_units(user_id)
+            except Exception:
+                remaining_user_units = 0
+            try:
+                remaining_guild_units = await get_guild_save_units(guild_id)
+            except Exception:
+                remaining_guild_units = 0
+
+            source = "your" if used_personal else "the server's"
+            await message.channel.send(
+                f"{reason} {message.author.mention} messed up at **{current_count}**, "
+                f"but {source} save was used — the count is **saved**.\n"
+                f"Next number is **{current_count + 1}**.\n"
+                f"Your saves: **{remaining_user_units/10:.1f}** • Server saves: **{remaining_guild_units/10:.1f}**"
+            )
+            return
+
+        # No saves: ruin the count (reset to 0)
+        db_ops = [
+            (
+                """
+                UPDATE counting_config
                 SET current_count = 0, last_user_id = NULL
                 WHERE guild_id = ?
-            """, (message.guild.id,)))
-
-            dice_db_ops.append(("""
+                """,
+                (guild_id,),
+            ),
+            (
+                """
                 INSERT INTO counting_stats (user_id, guild_id, total_counts, ruined_counts)
                 VALUES (?, ?, 0, 1)
                 ON CONFLICT(user_id, guild_id) DO UPDATE SET ruined_counts = ruined_counts + 1
-            """, (message.author.id, message.guild.id)))
+                """,
+                (user_id, guild_id),
+            ),
+        ]
 
-        else:
-            # REACTIONS COLLECTED -> ROLL DICE
-            dice_roll = random.randint(1, 6)
-            outcome_msg = f"🎲 **Dice Roll: {dice_roll}**\n"
-            
-            if dice_roll in [2, 4, 6]:
-                # SAVE
-                new_count = current_count
-                outcome_msg += "✨ **Saved!** The count continues!"
-                # No update to config needed except maybe verifying it? 
-                # Actually if saved, we do NOTHING to counting_config.
-            elif dice_roll == 3:
-                # RESET
-                new_count = 0
-                new_last_user_id = None
-                outcome_msg += "💥 **Reset!** The count goes back to 0."
-            elif dice_roll == 1:
-                # -10 Penalty
-                new_count = max(0, current_count - 10)
-                new_last_user_id = None
-                outcome_msg += "🔻 **-10 Penalty!** The count drops by 10."
-            elif dice_roll == 5:
-                # -5 Penalty
-                new_count = max(0, current_count - 5)
-                new_last_user_id = None
-                outcome_msg += "🔻 **-5 Penalty!** The count drops by 5."
+        retries = 3
+        while retries > 0:
+            try:
+                async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
+                    for sql, args in db_ops:
+                        await db.execute(sql, args)
+                    await db.commit()
+                break
+            except aiosqlite.OperationalError as e:
+                if "locked" in str(e).lower():
+                    retries -= 1
+                    await asyncio.sleep(0.3)
+                    continue
+                break
 
-            if dice_roll not in [2, 4, 6]:
-                dice_db_ops.append(("""
-                    UPDATE counting_config 
-                    SET current_count = ?, last_user_id = ?
-                    WHERE guild_id = ?
-                """, (new_count, new_last_user_id, message.guild.id)))
-            
-            dice_db_ops.append(("""
-                INSERT INTO counting_stats (user_id, guild_id, total_counts, ruined_counts)
-                VALUES (?, ?, 0, 1)
-                ON CONFLICT(user_id, guild_id) DO UPDATE SET ruined_counts = ruined_counts + 1
-            """, (message.author.id, message.guild.id)))
+        await message.channel.send(
+            f"{reason} {message.author.mention} messed up at **{current_count}**. "
+            "No saves were available — the count is **ruined** and has been reset to **0**.\n"
+            "Next number is **1**."
+        )
 
-        # EXECUTE DB OPS with Retry
-        if dice_db_ops:
-            retries = 3
-            while retries > 0:
-                try:
-                    async with aiosqlite.connect(DB_PATH, timeout=30.0) as db:
-                        for sql, args in dice_db_ops:
-                            await db.execute(sql, args)
-                        await db.commit()
-                    break # Success
-                except aiosqlite.OperationalError as e:
-                    if "locked" in str(e):
-                        retries -= 1
-                        await asyncio.sleep(0.5)
-                    else:
-                        print(f"Error saving count fail state: {e}")
-                        break
+        if isinstance(message.channel, discord.TextChannel):
+            await self._clear_all_warnings(guild_id)
+            await self._clear_highscore_marker_if_any(guild_id, message.channel)
 
-        # 4. Edit message
-        await status_msg.edit(content=f"{reason} {message.author.mention} messed up at {current_count}!\n{outcome_msg}\nNext number is **{new_count + 1}**.")
 
-        # If the count was actually changed (ruined/reset/penalty), clear warnings and remove highscore marker.
-        count_ruined = new_count != current_count
-        if count_ruined and message.guild and isinstance(message.channel, discord.TextChannel):
-            await self._clear_all_warnings(message.guild.id)
-            await self._clear_highscore_marker_if_any(message.guild.id, message.channel)
+    @commands.command(name="donateguild", aliases=["dg"])
+    async def donate_guild(self, ctx: commands.Context):
+        """Donate 1 personal save to the guild pool (guild receives 0.5 save)."""
+        if not ctx.guild:
+            return await ctx.send("Server only command.")
+
+        user_id = ctx.author.id
+        guild_id = ctx.guild.id
+
+        # Need at least 1.0 save (10 units) to donate.
+        user_units = await get_user_save_units(user_id)
+        if user_units < 10:
+            return await ctx.send(
+                f"You need **1.0** save to donate. Your saves: **{user_units/10:.1f}**"
+            )
+
+        # Consume 1.0 personal save
+        used = await try_use_user_save(user_id)
+        if not used:
+            return await ctx.send("Couldn't donate right now (try again).")
+
+        # Guild receives 0.5 save (5 units)
+        await add_guild_save_units(guild_id, 5)
+
+        new_user_units = await get_user_save_units(user_id)
+        new_guild_units = await get_guild_save_units(guild_id)
+        await ctx.send(
+            f"Donated **1.0** save to the server pool. Server gained **0.5** save.\n"
+            f"Your saves: **{new_user_units/10:.1f}** • Server saves: **{new_guild_units/10:.1f}**"
+        )
 
     @commands.hybrid_command(name="highscoretable", aliases=["highscores"], help="Show recent counting highscores")
     async def highscore_table(self, ctx: commands.Context):
