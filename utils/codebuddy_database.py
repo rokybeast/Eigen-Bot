@@ -33,11 +33,54 @@ async def init_db():
             )
         """)
         
-        # Check for missing columns in daily_quests
+        # Check for missing columns in daily_quests (lightweight migrations)
         cursor = await db.execute("PRAGMA table_info(daily_quests)")
         dq_columns = [row[1] async for row in cursor]
+
+        # Very old DBs may miss the legacy `saves` column.
         if "saves" not in dq_columns:
             await db.execute("ALTER TABLE daily_quests ADD COLUMN saves REAL NOT NULL DEFAULT 0")
+            dq_columns.append("saves")
+
+        # Inventory balances stored as integer tenths to avoid float drift.
+        # 10 units = 1.0 item. Rewards: +0.2 freeze = +2 units, +0.5 save = +5 units.
+        if "streak_freeze_units" not in dq_columns:
+            await db.execute(
+                "ALTER TABLE daily_quests ADD COLUMN streak_freeze_units INTEGER NOT NULL DEFAULT 0"
+            )
+            # Migrate existing integer streak_freezes -> units (best effort)
+            await db.execute(
+                "UPDATE daily_quests SET streak_freeze_units = COALESCE(streak_freezes, 0) * 10"
+            )
+
+        if "save_units" not in dq_columns:
+            await db.execute(
+                "ALTER TABLE daily_quests ADD COLUMN save_units INTEGER NOT NULL DEFAULT 0"
+            )
+            # Migrate existing saves (REAL) -> units (best effort)
+            await db.execute(
+                "UPDATE daily_quests SET save_units = CAST(ROUND(COALESCE(saves, 0) * 10) AS INTEGER)"
+            )
+
+        # New daily quest: count 5 numbers in the counting channel.
+        if "counting_numbers" not in dq_columns:
+            await db.execute(
+                "ALTER TABLE daily_quests ADD COLUMN counting_numbers INTEGER NOT NULL DEFAULT 0"
+            )
+
+        # Track individual completion of each quest so rewards are granted per-quest.
+        if "quiz_quest_completed" not in dq_columns:
+            await db.execute(
+                "ALTER TABLE daily_quests ADD COLUMN quiz_quest_completed INTEGER NOT NULL DEFAULT 0"
+            )
+
+        if "counting_quest_completed" not in dq_columns:
+            await db.execute(
+                "ALTER TABLE daily_quests ADD COLUMN counting_quest_completed INTEGER NOT NULL DEFAULT 0"
+            )
+
+        # Keep the old columns around for backward compatibility (streak_freezes/saves),
+        # but new code reads/writes *_units.
         
         # Weekly leaderboard table
         # Note: user_id is NOT a primary key here because we might want to store history,
@@ -109,6 +152,15 @@ async def init_db():
             )
         """)
 
+        # Guild save pool for counting mistakes.
+        # Stored as tenths (10 units = 1.0 save).
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS counting_guild_saves (
+                guild_id INTEGER PRIMARY KEY,
+                save_units INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+
         # Truth or Dare table
         await db.execute("""
             CREATE TABLE IF NOT EXISTS tod_questions (
@@ -127,6 +179,80 @@ async def init_db():
         
         await db.commit()
         await migrate_leaderboard()  # Prüft und fügt fehlende Spalten hinzu
+
+
+MAX_STREAK_FREEZE_UNITS = 20  # 2.0
+MAX_SAVE_UNITS = 40          # 4.0
+USE_ITEM_UNITS = 10          # 1.0
+QUEST_REWARD_FREEZE_UNITS = 2  # 0.2
+QUEST_REWARD_SAVE_UNITS = 5    # 0.5
+
+
+def _coerce_date(value: object) -> datetime.date:
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.datetime.strptime(value, "%Y-%m-%d").date()
+        except Exception:
+            pass
+    return datetime.date.today()
+
+
+def _clamp_int(value: int, min_value: int, max_value: int) -> int:
+    return max(min_value, min(max_value, int(value)))
+
+
+def _format_units(units: int) -> str:
+    # Display with at most 1 decimal (units are tenths).
+    whole, tenth = divmod(int(units), 10)
+    if tenth == 0:
+        return str(whole)
+    return f"{whole}.{tenth}"
+
+
+async def _ensure_daily_quest_row(db: aiosqlite.Connection, user_id: int) -> None:
+    today = datetime.date.today()
+
+    # Ensure row exists
+    await db.execute(
+        """
+        INSERT OR IGNORE INTO daily_quests (
+            user_id, quest_date,
+            quizzes_completed, counting_numbers,
+            quiz_quest_completed, counting_quest_completed,
+            voted_today, quest_completed,
+            streak_freezes, bonus_hints, saves,
+            streak_freeze_units, save_units
+        )
+        VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        """,
+        (user_id, today),
+    )
+
+    # Reset daily progress if date has rolled over
+    cursor = await db.execute(
+        "SELECT quest_date FROM daily_quests WHERE user_id = ?",
+        (user_id,),
+    )
+    row = await cursor.fetchone()
+    quest_date = _coerce_date(row[0]) if row else today
+    if quest_date < today:
+        await db.execute(
+            """
+            UPDATE daily_quests
+            SET quest_date = ?,
+                quizzes_completed = 0,
+                counting_numbers = 0,
+                quiz_quest_completed = 0,
+                counting_quest_completed = 0,
+                voted_today = 0,
+                quest_completed = 0
+            WHERE user_id = ?
+            """,
+            (today, user_id),
+        )
+
 
 async def populate_tod_questions(db):
     """Populate the TOD table with default questions."""
@@ -406,105 +532,168 @@ async def get_score_gap(user_id: int):
 async def get_daily_quest_progress(user_id: int):
     """
     Get the daily quest progress for a user.
-    Returns: (quest_date, quizzes_completed, voted_today, quest_completed, streak_freezes, bonus_hints)
+    Returns: (quest_date, quizzes_completed, counting_numbers, quiz_completed, counting_completed, streak_freeze_units, save_units)
     """
     today = datetime.date.today()
-    
+
     async with aiosqlite.connect(DB_PATH) as db:
+        await _ensure_daily_quest_row(db, user_id)
+
         cursor = await db.execute(
-            "SELECT quest_date, quizzes_completed, voted_today, quest_completed, streak_freezes, bonus_hints FROM daily_quests WHERE user_id = ?",
-            (user_id,)
+            """
+            SELECT quest_date,
+                   quizzes_completed,
+                   counting_numbers,
+                   quiz_quest_completed,
+                   counting_quest_completed,
+                   streak_freeze_units,
+                   save_units
+            FROM daily_quests
+            WHERE user_id = ?
+            """,
+            (user_id,),
         )
         row = await cursor.fetchone()
-        
+
         if not row:
-            # Initialize new quest entry for today
-            await db.execute(
-                "INSERT INTO daily_quests (user_id, quest_date, quizzes_completed, voted_today, quest_completed, streak_freezes, bonus_hints) VALUES (?, ?, 0, 0, 0, 0, 0)",
-                (user_id, today)
-            )
-            await db.commit()
-            return (today, 0, 0, 0, 0, 0)
-        
-        quest_date_str, quizzes, voted, completed, freezes, hints = row
-        quest_date = datetime.datetime.strptime(quest_date_str, "%Y-%m-%d").date()
-        
-        # Check if quest is from a previous day - reset if so
-        if quest_date < today:
-            await db.execute(
-                "UPDATE daily_quests SET quest_date = ?, quizzes_completed = 0, voted_today = 0, quest_completed = 0 WHERE user_id = ?",
-                (today, user_id)
-            )
-            await db.commit()
-            return (today, 0, 0, 0, freezes, hints)
-        
-        return (quest_date, quizzes, voted, completed, freezes, hints)
+            return (today, 0, 0, 0, 0, 0, 0)
+
+        quest_date = _coerce_date(row[0])
+        quizzes = int(row[1] or 0)
+        counting_numbers = int(row[2] or 0)
+        quiz_done = int(row[3] or 0)
+        counting_done = int(row[4] or 0)
+        freeze_units = int(row[5] or 0)
+        save_units = int(row[6] or 0)
+
+        return (quest_date, quizzes, counting_numbers, quiz_done, counting_done, freeze_units, save_units)
 
 async def increment_quest_quiz_count(user_id: int):
     """
-    Increment the quiz count for today's quest.
-    Returns True if quest was completed with this quiz.
+    Increment the quiz task progress for today's quest.
+    Returns True if the *quiz quest* was completed with this answer.
     """
     async with aiosqlite.connect(DB_PATH) as db:
-        # Get current progress
-        progress = await get_daily_quest_progress(user_id)
-        _, quizzes, voted, completed, freezes, hints = progress
-        
-        # Don't increment if already at 5 or more
+        await _ensure_daily_quest_row(db, user_id)
+
+        cursor = await db.execute(
+            """
+            SELECT quizzes_completed, quiz_quest_completed, streak_freeze_units, save_units
+            FROM daily_quests
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        quizzes = int(row[0] or 0) if row else 0
+        quest_done = int(row[1] or 0) if row else 0
+        freeze_units = int(row[2] or 0) if row else 0
+        save_units = int(row[3] or 0) if row else 0
+
+        if quest_done == 1:
+            return False
+
         if quizzes >= 5:
             return False
-        
-        new_count = quizzes + 1
-        
-        # Check if quest is now complete (only requires 5 quizzes)
-        quest_complete = (new_count >= 5 and completed == 0)
-        
+
+        new_quizzes = min(5, quizzes + 1)
+        quest_complete = new_quizzes >= 5
+
         if quest_complete:
-            # Quest completed! Award rewards
+            new_freeze_units = _clamp_int(freeze_units + QUEST_REWARD_FREEZE_UNITS, 0, MAX_STREAK_FREEZE_UNITS)
+            new_save_units = _clamp_int(save_units + QUEST_REWARD_SAVE_UNITS, 0, MAX_SAVE_UNITS)
             await db.execute(
-                "UPDATE daily_quests SET quizzes_completed = ?, quest_completed = 1, streak_freezes = streak_freezes + 1, bonus_hints = bonus_hints + 1 WHERE user_id = ?",
-                (new_count, user_id)
+                """
+                UPDATE daily_quests
+                SET quizzes_completed = ?,
+                    quiz_quest_completed = 1,
+                    streak_freeze_units = ?,
+                    save_units = ?
+                WHERE user_id = ?
+                """,
+                (new_quizzes, new_freeze_units, new_save_units, user_id),
             )
         else:
             await db.execute(
                 "UPDATE daily_quests SET quizzes_completed = ? WHERE user_id = ?",
-                (new_count, user_id)
+                (new_quizzes, user_id),
             )
-        
+
+        await db.commit()
+        return quest_complete
+
+
+async def increment_quest_counting_count(user_id: int):
+    """Increment the counting task progress for today's quest.
+
+    Returns True if the *counting quest* was completed with this count.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        await _ensure_daily_quest_row(db, user_id)
+
+        cursor = await db.execute(
+            """
+            SELECT counting_numbers, counting_quest_completed, streak_freeze_units, save_units
+            FROM daily_quests
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        counted = int(row[0] or 0) if row else 0
+        quest_done = int(row[1] or 0) if row else 0
+        freeze_units = int(row[2] or 0) if row else 0
+        save_units = int(row[3] or 0) if row else 0
+
+        if quest_done == 1:
+            return False
+
+        if counted >= 5:
+            return False
+
+        new_counted = min(5, counted + 1)
+        quest_complete = new_counted >= 5
+
+        if quest_complete:
+            new_freeze_units = _clamp_int(freeze_units + QUEST_REWARD_FREEZE_UNITS, 0, MAX_STREAK_FREEZE_UNITS)
+            new_save_units = _clamp_int(save_units + QUEST_REWARD_SAVE_UNITS, 0, MAX_SAVE_UNITS)
+            await db.execute(
+                """
+                UPDATE daily_quests
+                SET counting_numbers = ?,
+                    counting_quest_completed = 1,
+                    streak_freeze_units = ?,
+                    save_units = ?
+                WHERE user_id = ?
+                """,
+                (new_counted, new_freeze_units, new_save_units, user_id),
+            )
+        else:
+            await db.execute(
+                "UPDATE daily_quests SET counting_numbers = ? WHERE user_id = ?",
+                (new_counted, user_id),
+            )
+
         await db.commit()
         return quest_complete
 
 async def mark_quest_voted(user_id: int):
     """
     Mark that the user has voted today.
-    Returns True if quest was completed with this vote.
+    Legacy helper (voting quest not currently used).
+
+    Returns False.
     """
     async with aiosqlite.connect(DB_PATH) as db:
-        # Get current progress
-        progress = await get_daily_quest_progress(user_id)
-        _, quizzes, voted, completed, freezes, hints = progress
-        
-        # Don't mark if already voted
-        if voted == 1:
-            return False
-        
-        # Check if quest is now complete
-        quest_complete = (quizzes >= 5 and completed == 0)
-        
-        if quest_complete:
-            # Quest completed! Award rewards
-            await db.execute(
-                "UPDATE daily_quests SET voted_today = 1, quest_completed = 1, streak_freezes = streak_freezes + 1, bonus_hints = bonus_hints + 1 WHERE user_id = ?",
-                (user_id,)
-            )
-        else:
-            await db.execute(
-                "UPDATE daily_quests SET voted_today = 1 WHERE user_id = ?",
-                (user_id,)
-            )
-        
+        await _ensure_daily_quest_row(db, user_id)
+
+        # Keep a flag for future use; do not award items from voting.
+        await db.execute(
+            "UPDATE daily_quests SET voted_today = 1 WHERE user_id = ?",
+            (user_id,),
+        )
         await db.commit()
-        return quest_complete
+        return False
 
 async def use_streak_freeze(user_id: int):
     """
@@ -512,19 +701,21 @@ async def use_streak_freeze(user_id: int):
     Returns True if freeze was available and used.
     """
     async with aiosqlite.connect(DB_PATH) as db:
+        await _ensure_daily_quest_row(db, user_id)
+
         cursor = await db.execute(
-            "SELECT streak_freezes FROM daily_quests WHERE user_id = ?",
-            (user_id,)
+            "SELECT streak_freeze_units FROM daily_quests WHERE user_id = ?",
+            (user_id,),
         )
         row = await cursor.fetchone()
-        
-        if not row or row[0] <= 0:
+
+        current_units = int(row[0] or 0) if row else 0
+        if current_units < USE_ITEM_UNITS:
             return False
-        
-        # Use one freeze
+
         await db.execute(
-            "UPDATE daily_quests SET streak_freezes = streak_freezes - 1 WHERE user_id = ?",
-            (user_id,)
+            "UPDATE daily_quests SET streak_freeze_units = streak_freeze_units - ? WHERE user_id = ?",
+            (USE_ITEM_UNITS, user_id),
         )
         await db.commit()
         return True
@@ -554,18 +745,85 @@ async def use_bonus_hint(user_id: int):
 
 async def get_quest_rewards(user_id: int):
     """
-    Get the current number of streak freezes and bonus hints.
-    Returns: (streak_freezes, bonus_hints)
+    Get the current inventory balances.
+    Returns: (streak_freeze_units, save_units)
     """
     async with aiosqlite.connect(DB_PATH) as db:
+        await _ensure_daily_quest_row(db, user_id)
         cursor = await db.execute(
-            "SELECT streak_freezes, bonus_hints FROM daily_quests WHERE user_id = ?",
-            (user_id,)
+            "SELECT streak_freeze_units, save_units FROM daily_quests WHERE user_id = ?",
+            (user_id,),
         )
         row = await cursor.fetchone()
-        
         if not row:
             return (0, 0)
-        
-        return row
+        return (int(row[0] or 0), int(row[1] or 0))
+
+
+async def get_user_save_units(user_id: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await _ensure_daily_quest_row(db, user_id)
+        cursor = await db.execute("SELECT save_units FROM daily_quests WHERE user_id = ?", (user_id,))
+        row = await cursor.fetchone()
+        return int(row[0] or 0) if row else 0
+
+
+async def try_use_user_save(user_id: int) -> bool:
+    """Consume 1.0 personal save if available."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await _ensure_daily_quest_row(db, user_id)
+        cursor = await db.execute("SELECT save_units FROM daily_quests WHERE user_id = ?", (user_id,))
+        row = await cursor.fetchone()
+        units = int(row[0] or 0) if row else 0
+        if units < USE_ITEM_UNITS:
+            return False
+        await db.execute(
+            "UPDATE daily_quests SET save_units = save_units - ? WHERE user_id = ?",
+            (USE_ITEM_UNITS, user_id),
+        )
+        await db.commit()
+        return True
+
+
+async def get_guild_save_units(guild_id: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT save_units FROM counting_guild_saves WHERE guild_id = ?",
+            (guild_id,),
+        )
+        row = await cursor.fetchone()
+        return int(row[0] or 0) if row else 0
+
+
+async def add_guild_save_units(guild_id: int, units: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO counting_guild_saves (guild_id, save_units)
+            VALUES (?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET save_units = save_units + excluded.save_units
+            """,
+            (guild_id, int(units)),
+        )
+        await db.commit()
+        return await get_guild_save_units(guild_id)
+
+
+async def try_use_guild_save(guild_id: int) -> bool:
+    """Consume 1.0 guild save if available."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT save_units FROM counting_guild_saves WHERE guild_id = ?",
+            (guild_id,),
+        )
+        row = await cursor.fetchone()
+        units = int(row[0] or 0) if row else 0
+        if units < USE_ITEM_UNITS:
+            return False
+        await db.execute(
+            "UPDATE counting_guild_saves SET save_units = save_units - ? WHERE guild_id = ?",
+            (USE_ITEM_UNITS, guild_id),
+        )
+        await db.commit()
+        return True
 

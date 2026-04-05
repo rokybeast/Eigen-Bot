@@ -30,7 +30,7 @@ class DailyQuestsCog(commands.Cog):
         
         try:
             # Get quest progress
-            quest_date, quizzes, voted, completed, freezes, _ = await get_daily_quest_progress(user_id)
+            quest_date, quizzes, counting_numbers, quiz_done, counting_done, freeze_units, save_units = await get_daily_quest_progress(user_id)
             
             # Create embed
             embed = discord.Embed(
@@ -40,27 +40,34 @@ class DailyQuestsCog(commands.Cog):
             )
             
             # Quest tasks
-            quiz_status = "Done" if quizzes >= 5 else f"{quizzes}/5"
-            
+            quiz_status = "Done" if quiz_done == 1 else f"{quizzes}/5"
+            count_status = "Done" if counting_done == 1 else f"{counting_numbers}/5"
+
             tasks = f"""
-            **Solve 5 Basic Quizzes** {quiz_status}
-            Answer <#1398986762352857129> quiz questions correctly to complete the quest!
-            
-            *Note: Top.gg voting will be added soon for bonus rewards!*
+            **Answer 5 Quiz Questions** {quiz_status}
+            Answer in the quiz channel to progress.
+
+            **Count 5 Numbers** {count_status}
+            Count in your server's counting channel to progress.
             """
             
             embed.add_field(name="Quest Tasks", value=tasks, inline=False)
             
             # Rewards section
-            if completed == 1:
-                reward_text = "**Quest Completed!** You earned:\n• 1 Streak Freeze"
-            else:
-                reward_text = "Complete all tasks to earn:\n• 1 Streak Freeze (protects your streak)"
+            reward_text = (
+                "Each quest completion gives:\n"
+                "• **0.2** Streak Freeze\n"
+                "• **0.5** Save\n\n"
+                "Max inventory: **2.0** Streak Freezes, **4.0** Saves"
+            )
             
             embed.add_field(name="Rewards", value=reward_text, inline=False)
             
             # Current inventory
-            inventory = f"Streak Freezes: **{freezes}**"
+            inventory = (
+                f"Streak Freezes: **{freeze_units/10:.1f}/2.0**\n"
+                f"Saves: **{save_units/10:.1f}/4.0**"
+            )
             embed.add_field(name="Your Inventory", value=inventory, inline=False)
             
             # Footer
@@ -79,7 +86,7 @@ class DailyQuestsCog(commands.Cog):
         user_id = ctx.author.id
         
         try:
-            freezes, _ = await get_quest_rewards(user_id)
+            freeze_units, save_units = await get_quest_rewards(user_id)
             
             embed = discord.Embed(
                 title="Your Inventory",
@@ -90,9 +97,17 @@ class DailyQuestsCog(commands.Cog):
             # Streak Freezes
             freeze_desc = "Protect your quiz streak when you answer incorrectly.\nAutomatically used when needed."
             embed.add_field(
-                name=f"Streak Freezes: {freezes}",
+                name=f"Streak Freezes: {freeze_units/10:.1f}/2.0",
                 value=freeze_desc,
                 inline=False
+            )
+
+            # Saves
+            save_desc = "Protect the counting game if you ruin the count.\nUsed automatically when you mess up."
+            embed.add_field(
+                name=f"Saves: {save_units/10:.1f}/4.0",
+                value=save_desc,
+                inline=False,
             )
             
             # How to earn more
@@ -118,7 +133,7 @@ class DailyQuestsCog(commands.Cog):
         
         try:
             # Get quest progress
-            quest_date, quizzes, voted, completed, freezes, _ = await get_daily_quest_progress(user_id)
+            quest_date, quizzes, counting_numbers, quiz_done, counting_done, freeze_units, save_units = await get_daily_quest_progress(user_id)
             
             # Create embed
             embed = discord.Embed(
@@ -128,27 +143,34 @@ class DailyQuestsCog(commands.Cog):
             )
             
             # Quest tasks
-            quiz_status = "Done" if quizzes >= 5 else f"{quizzes}/5"
-            
+            quiz_status = "Done" if quiz_done == 1 else f"{quizzes}/5"
+            count_status = "Done" if counting_done == 1 else f"{counting_numbers}/5"
+
             tasks = f"""
-            **Solve 5 Basic Quizzes** {quiz_status}
-            *Answer CodeBuddy quiz questions correctly to complete the quest!*
-            
-            *Note: Top.gg voting will be added soon for bonus rewards!*
+            **Answer 5 Quiz Questions** {quiz_status}
+            *Answer CodeBuddy quiz questions correctly to progress.*
+
+            **Count 5 Numbers** {count_status}
+            *Count in your server's counting channel to progress.*
             """
             
             embed.add_field(name="Quest Tasks", value=tasks, inline=False)
             
             # Rewards section
-            if completed == 1:
-                reward_text = "**Quest Completed!** You earned:\n• 1 Streak Freeze"
-            else:
-                reward_text = "Complete all tasks to earn:\n• 1 Streak Freeze (protects your streak)"
+            reward_text = (
+                "Each quest completion gives:\n"
+                "• **0.2** Streak Freeze\n"
+                "• **0.5** Save\n\n"
+                "Max inventory: **2.0** Streak Freezes, **4.0** Saves"
+            )
             
             embed.add_field(name="Rewards", value=reward_text, inline=False)
             
             # Current inventory
-            inventory = f"Streak Freezes: **{freezes}**"
+            inventory = (
+                f"Streak Freezes: **{freeze_units/10:.1f}/2.0**\n"
+                f"Saves: **{save_units/10:.1f}/4.0**"
+            )
             embed.add_field(name="Your Inventory", value=inventory, inline=False)
             
             # Footer

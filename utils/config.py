@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Optional
 
 from pydantic import Field, field_validator, model_validator
@@ -31,6 +32,42 @@ class Config(BaseSettings):
         extra='ignore'  # Ignore extra fields from .env
     )
 
+    @field_validator('guild_id', mode='before')
+    @classmethod
+    def _parse_guild_id(cls, v: Any) -> Optional[int]:
+        """Parse legacy single guild id.
+
+        Some deployments mistakenly set `GUILD_ID` as a CSV / JSON list.
+        To stay backwards compatible and avoid startup failures, we accept:
+        - int
+        - numeric string
+        - CSV: "1,2,3" (uses the first value)
+        - JSON list: "[1,2]" (uses the first value)
+        """
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            if s.startswith('[') and s.endswith(']'):
+                try:
+                    import json
+
+                    parsed = json.loads(s)
+                    if isinstance(parsed, list) and parsed:
+                        return int(parsed[0])
+                except Exception:
+                    # Fall back to CSV/int parsing
+                    pass
+            if ',' in s:
+                first = s.split(',', 1)[0].strip()
+                return int(first) if first else None
+            return int(s)
+        return int(v)
+
     @field_validator('guild_ids', mode='before')
     @classmethod
     def _parse_guild_ids(cls, v: Any) -> list[int]:
@@ -42,7 +79,12 @@ class Config(BaseSettings):
         - CSV: "1,2,3"
         """
         if v is None:
-            return []
+            # If GUILD_IDS isn't set, allow legacy GUILD_ID to behave like a list.
+            legacy = os.getenv('GUILD_ID')
+            if legacy and str(legacy).strip():
+                v = legacy
+            else:
+                return []
         if isinstance(v, list):
             return [int(x) for x in v if str(x).strip()]
         if isinstance(v, (int, str)):
